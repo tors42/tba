@@ -1,0 +1,70 @@
+div.messages {
+    background-color: #00000000;
+
+    div {
+        padding: 4px 4px;
+        animation: slideIn .5s linear forwards;
+        opacity: 1;
+    }
+}
+
+div {
+    /* font-family: Fantasy; */
+}
+
+@keyframes slideIn {
+    from {
+        max-height: 0px;
+        transform: scale(0);
+        opacity: 0;
+    }
+    to {
+        max-height: 1000px;
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+span.member {
+    font-weight: bold
+}
+
+span.foe {
+    font-style: italic
+}
+
+th, td {
+    border-bottom: 1px solid #ddd;
+}
+
+.avenge, .standings, .tourbegin, .tourend, .streak, .join, .firstblood  {
+    /* background-color: #e9fefe; */
+    /* border-left: 6px solid #2196F3; */
+}
+
+/*
+
+.firstblood, .tourend {
+    background-color: #ffdddd;
+    border-left: 6px solid #f44336;
+}
+
+.join {
+    background-color: #ddffdd;
+    border-left: 6px solid #04AA6D;
+}
+
+.streak, .avenge, .tourbegin {
+    background-color: #e7f3fe;
+    border-left: 6px solid #2196F3;
+}
+
+.standings {
+    background-color: #ffffcc;
+    border-left: 6px solid #ffeb3b;
+}
+
+*/
+
+
+

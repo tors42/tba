@@ -1,0 +1,86 @@
+# Workflow which will build tba and "cross-compile"/jlink it for multiple OS and architectures
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number'
+        required: true
+        type: string
+
+jobs:
+  jlink:
+    env:
+      JDK_BASE_URL: "https://download.java.net/java/GA/jdk23.0.2/6da2a6609d6e406f85c491fcb119101b/7/GPL/"
+      build_os: linux
+      build_arch: x64
+      build_pkg: tar.gz
+
+    strategy:
+      matrix:
+        os:    [linux, windows, macos]
+        arch:  [aarch64, x64]
+        include:
+          - os: linux
+            pkg: tar.gz
+          - os: windows
+            pkg: zip
+          - os: macos
+            pkg: tar.gz
+        exclude:
+          - os: windows
+            arch: aarch64
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download target OS+Arch JDK
+        run: curl --output ${{ runner.temp }}/jdk.${{ matrix.pkg }} ${{ env.JDK_BASE_URL }}/openjdk-23.0.2_${{ matrix.os }}-${{ matrix.arch }}_bin.${{ matrix.pkg }}
+
+      # In order to avoid knowing the directory structure within the different target OS+Arch archives,
+      # using setup-java action to unpack the target OS+Arch archive (probably performs unpack + JAVA_HOME + PATH)
+      # to be able to easily reference the target JDK location as $JAVA_HOME
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.${{ matrix.pkg }}
+          java-version: '23'
+          architecture: ${{ matrix.arch }}
+
+      - name: Copy target JDK
+        run: cp -r ${{ env.JAVA_HOME }} ${{ runner.temp }}/targetjdk
+
+      - name: Download build environment JDK
+        if: ${{ matrix.os != env.build_os || matrix.arch != env.build_arch }}
+        run: curl --output ${{ runner.temp }}/buildjdk.${{ env.build_pkg }} ${{ env.JDK_BASE_URL }}/openjdk-23.0.2_${{ env.build_os }}-${{ env.build_arch }}_bin.${{ env.build_pkg }}
+
+      - uses: actions/setup-java@v4
+        if: ${{ matrix.os != env.build_os || matrix.arch != env.build_arch }}
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/buildjdk.${{ env.build_pkg}}
+          java-version: '23'
+          architecture: ${{ env.build_arch }}
+
+      - name: Run build
+        run: java --enable-preview build.java ${{ inputs.version }} "$(git log -1 --format=%aI)" "${{ matrix.os }}-${{ matrix.arch }}" $(dirname $(find ${{ runner.temp }}/targetjdk -name jmods))/jmods
+
+      - name: Prepare directory to package
+        run: mkdir to-package && mv out/runtime/${{ matrix.os }}-${{ matrix.arch }} to-package/tba-${{ inputs.version }}
+
+      - name: Determine file type of packaged java binary
+        run: file $(find to-package/ -regex ".*/bin/java\(.exe\)?$")
+
+      # upload-artifact doesn't preserve the executable bit information of files,
+      # so creating a zip file which preserves the executable bits,
+      # and then tell upload-artifact to zip this zip file instead of the files within the zip... sigh.
+      - name: Create zip, preserving executable bits
+        run: cd to-package && zip -r tba-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.zip tba-${{ inputs.version }} && cd ..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wrapped-zip-tba-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: to-package/tba-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.zip
