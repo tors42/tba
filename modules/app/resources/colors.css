@@ -1,7 +1,6 @@
 div {
     margin-bottom: 2px;
     padding: 2px 2px;
-    /* font-family: Fantasy; */
 }
 
 span.member {
@@ -32,18 +31,6 @@ span.foe {
     border-left: 6px solid #ffeb3b;
 }
 
-th {
-    text-align: left;
-}
-th, td {
-    border-bottom: 1px solid #ddd;
-}
-
-.avenge, .standings, .tourbegin, .tourend, .streak, .join, .firstblood  {
-    /* background-color: #e9fefe; */
-    /* border-left: 6px solid #2196F3; */
-}
-
 div.messages {
     background-color: #00000000;
     div {
@@ -63,4 +50,12 @@ div.messages {
         transform: scale(1);
         opacity: 1;
     }
+}
+
+th {
+    text-align: left;
+}
+
+th, td {
+    border-bottom: 1px solid #ddd;
 }

@@ -4,9 +4,10 @@ import module java.base;
 import module java.desktop;
 
 import java.util.List;
+
 import javax.swing.filechooser.FileFilter;
 
-import app.sink.HttpEventGUI;
+import app.AppConfig.CSSChoice;
 import app.Util.LabelAndField;
 
 public class Menu {
@@ -26,8 +27,8 @@ public class Menu {
     }
 
 
-    static String readBuiltInCSS() {
-        try (var is = Menu.class.getModule().getResourceAsStream(HttpEventGUI.GUIConfig.defaultCSSResource);
+    static String readBuiltInCSS(String resource) {
+        try (var is = Menu.class.getModule().getResourceAsStream(resource);
              var os = new ByteArrayOutputStream()) {
             is.transferTo(os);
             return os.toString();
@@ -49,9 +50,11 @@ public class Menu {
         JButton buttonCancel = Util.createButtonForOptionPane("Cancel");
 
         ButtonGroup buttonGroup = new ButtonGroup();
-        JRadioButton rbBuiltin = new JRadioButton("Built-In");
-        JRadioButton rbCustomCSS = new JRadioButton();
-        buttonGroup.add(rbBuiltin);
+        JRadioButton rbBuiltinColors = new JRadioButton("Colors (Built-In)");
+        JRadioButton rbBuiltinSimple = new JRadioButton("Simple (Built-In)");
+        JRadioButton rbCustomCSS = new JRadioButton("File: ");
+        buttonGroup.add(rbBuiltinColors);
+        buttonGroup.add(rbBuiltinSimple);
         buttonGroup.add(rbCustomCSS);
 
         JTextArea cssTextArea = new JTextArea(22, 40);
@@ -64,7 +67,8 @@ public class Menu {
 
         JScrollPane cssScrollPane = new JScrollPane(cssTextArea, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-        String builtinCssString = readBuiltInCSS();
+        String builtinColorsCssString = readBuiltInCSS(CSSChoice.BuiltInCSS.colors.resource);
+        String builtinSimpleCssString = readBuiltInCSS(CSSChoice.BuiltInCSS.simple.resource);
 
         AtomicReference<Path> selectedPath = new AtomicReference<>();
 
@@ -86,14 +90,24 @@ public class Menu {
             }
         });
 
-        rbBuiltin.addItemListener(event -> {
+        rbBuiltinColors.addItemListener(event -> {
             if (event.getStateChange() == ItemEvent.SELECTED) {
                 // always enable ok if built-in is selected
                 buttonOk.setEnabled(true);
-                cssTextArea.setText(builtinCssString);
+                cssTextArea.setText(builtinColorsCssString);
                 cssTextArea.setCaretPosition(0);
             }
         });
+
+        rbBuiltinSimple.addItemListener(event -> {
+            if (event.getStateChange() == ItemEvent.SELECTED) {
+                // always enable ok if built-in is selected
+                buttonOk.setEnabled(true);
+                cssTextArea.setText(builtinSimpleCssString);
+                cssTextArea.setCaretPosition(0);
+            }
+        });
+
 
         JButton buttonChooseFile = new JButton("Choose File");
 
@@ -128,7 +142,19 @@ public class Menu {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
-        List.of(rbBuiltin, rbCustomCSS, buttonChooseFile, cssScrollPane)
+        JPanel fileAndButtonPanel = new JPanel();
+        fileAndButtonPanel.setLayout(new BoxLayout(fileAndButtonPanel, BoxLayout.X_AXIS));
+        List.of(rbCustomCSS, buttonChooseFile).forEach(component -> {
+            panel.add(component);
+            component.setAlignmentX(Component.LEFT_ALIGNMENT);
+        });
+        fileAndButtonPanel.add(rbCustomCSS);
+        fileAndButtonPanel.add(buttonChooseFile);
+
+        List.of(rbBuiltinColors, rbBuiltinSimple,
+                //rbCustomCSS, buttonChooseFile,
+                fileAndButtonPanel,
+                cssScrollPane)
             .forEach(component -> {
                 panel.add(component);
                 component.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -138,42 +164,54 @@ public class Menu {
 
         menuItem.addActionListener(_ -> {
 
-            boolean builtinSelected = config.cssChoice() instanceof AppConfig.CSSChoice.BuiltIn;
-            rbBuiltin.setSelected(builtinSelected);
-            rbCustomCSS.setSelected(!builtinSelected);
-            Optional<Path> customCssPath = config.cssCustomPath();
-            customCssPath.ifPresent(selectedPath::set);
-
-            if (builtinSelected) {
-                cssTextArea.setText(builtinCssString);
-                cssTextArea.setCaretPosition(0);
-            } else {
-                customCssPath.ifPresent(path -> {
-                    cssTextArea.setText(readCSSFromPath(path));
-                    cssTextArea.setCaretPosition(0);
-                });
-            }
-
-            buttonOk.setEnabled(builtinSelected || customCssPath.map(Files::exists).orElse(false));
-
-            if (customCssPath.isPresent()) {
-                Path path = customCssPath.get();
-                rbCustomCSS.setText(path.getFileName().toString());
-                rbCustomCSS.setEnabled(Files.exists(path));
+            Optional<Path> customPath = config.cssCustomPath();
+            if (customPath.isPresent()) {
+                rbCustomCSS.setText(customPath.get().getFileName().toString());
             } else {
                 rbCustomCSS.setText("<No file selected>");
                 rbCustomCSS.setEnabled(false);
             }
+
+            config.cssCustomPath().ifPresent(selectedPath::set);
+
+            switch (config.cssChoice()) {
+                case CSSChoice.BuiltInCSS.colors -> {
+                    rbBuiltinColors.setSelected(true);
+                    cssTextArea.setText(builtinColorsCssString);
+                    cssTextArea.setCaretPosition(0);
+                }
+                case CSSChoice.BuiltInCSS.simple -> {
+                    rbBuiltinSimple.setSelected(true);
+                    cssTextArea.setText(builtinSimpleCssString);
+                    cssTextArea.setCaretPosition(0);
+                }
+                case CSSChoice.Custom(Path path) -> {
+                    if (Files.exists(path)) {
+                        rbCustomCSS.setText(path.getFileName().toString());
+                        rbCustomCSS.setSelected(true);
+                        rbCustomCSS.setEnabled(true);
+                        cssTextArea.setText(readCSSFromPath(path));
+                        cssTextArea.setCaretPosition(0);
+                    } else {
+                        rbCustomCSS.setSelected(false);
+                        rbCustomCSS.setEnabled(false);
+                    }
+                }
+            };
+
+            buttonOk.setEnabled(rbBuiltinColors.isSelected() || rbBuiltinSimple.isSelected() || rbCustomCSS.isSelected());
 
             int choice = JOptionPane.showOptionDialog(frame, panel, "Configure CSS",
                     JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null,
                     new Object[]{buttonOk, buttonCancel}, buttonOk);
 
             if (choice == JOptionPane.OK_OPTION) {
-                if (rbBuiltin.isSelected()) {
-                    config.storeCSSChoice(new AppConfig.CSSChoice.BuiltIn());
+                if (rbBuiltinColors.isSelected()) {
+                    config.storeCSSChoice(CSSChoice.BuiltInCSS.colors);
+                } else if (rbBuiltinSimple.isSelected()) {
+                    config.storeCSSChoice(CSSChoice.BuiltInCSS.simple);
                 } else if (rbCustomCSS.isSelected()) {
-                    config.storeCSSChoice(new AppConfig.CSSChoice.Custom(selectedPath.get()));
+                    config.storeCSSChoice(new CSSChoice.Custom(selectedPath.get()));
                 }
             }
         });

@@ -5,6 +5,8 @@ import module tba.api;
 import module java.base;
 import module java.desktop;
 
+import app.AppConfig.CSSChoice;
+
 import tba.api.Event;
 
 import javax.swing.text.Element;
@@ -63,9 +65,9 @@ public class HttpEventGUI implements SinkProvider {
             StyleSheet styleSheet = new StyleSheet();
 
             try (var reader = switch(config.css()) {
-                case CSS.External(Path css) -> Files.newBufferedReader(css);
-                case CSS.Internal(String cssResource)
-                    -> new InputStreamReader(config.getClass().getModule().getResourceAsStream(cssResource));
+                case CSSChoice.Custom(Path path) -> Files.newBufferedReader(path);
+                case CSSChoice.BuiltInCSS builtin ->
+                    new InputStreamReader(config.getClass().getModule().getResourceAsStream(builtin.resource));
             }) {
                 styleSheet.loadRules(reader, null);
                 kit.setStyleSheet(styleSheet);
@@ -96,23 +98,18 @@ public class HttpEventGUI implements SinkProvider {
             """;
     }
 
-    sealed interface CSS {
-        record External(Path css) implements CSS {}
-        record Internal(String cssResource) implements CSS {}
-    }
-
-    public record GUIConfig(CSS css, String title) implements Config {
+    public record GUIConfig(CSSChoice css, String title) implements Config {
 
         public static final String defaultTitle = "Team Battle Events";
-        public static final String defaultCSSResource = "/stylesheet.css";
 
         @Override
         public void store(Preferences prefs) {
             prefs.put("title", title);
             switch (css()) {
-                case CSS.External(Path css)
-                    -> prefs.put("stylesheetPath",css.toString());
-                case CSS.Internal _ -> {}
+                case CSSChoice.Custom(Path css)
+                    -> prefs.put("stylesheetPath", css.toString());
+                case CSSChoice.BuiltInCSS builtin
+                    -> prefs.put("builtin", builtin.name());
             };
         }
     }
@@ -125,13 +122,16 @@ public class HttpEventGUI implements SinkProvider {
             @Override public Optional<Config> interactiveConfig(Preferences prefs) { return noninteractiveConfig(prefs); }
             @Override
             public Optional<Config> noninteractiveConfig() {
-                return Optional.of(new GUIConfig(new CSS.Internal(GUIConfig.defaultCSSResource), GUIConfig.defaultTitle));
+                return Optional.of(new GUIConfig(CSSChoice.BuiltInCSS.colors, GUIConfig.defaultTitle));
             }
             @Override
             public Optional<Config> noninteractiveConfig(Preferences prefs) {
-                CSS css = switch(prefs.get("stylesheetPath", null)) {
-                    case null        -> new CSS.Internal(GUIConfig.defaultCSSResource);
-                    case String path -> new CSS.External(Path.of(path));
+                CSSChoice css = switch(prefs.get("stylesheetPath", null)) {
+                    case null -> switch (prefs.get("builtin", CSSChoice.BuiltInCSS.colors.name())) {
+                        case "simple" -> CSSChoice.BuiltInCSS.simple;
+                        default -> CSSChoice.BuiltInCSS.colors;
+                    };
+                    case String path -> new CSSChoice.Custom(Path.of(path));
                 };
                 String title = prefs.get("title", GUIConfig.defaultTitle);
                 return Optional.of(new GUIConfig(css, title));

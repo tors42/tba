@@ -4,7 +4,7 @@ import module java.base;
 import module java.prefs;
 import module java.desktop;
 
-record AppConfig(Preferences prefs) {
+public record AppConfig(Preferences prefs) {
 
     static AppConfig withSyncOnExit(Preferences prefs) {
         AppConfig config = new AppConfig(prefs);
@@ -33,10 +33,9 @@ record AppConfig(Preferences prefs) {
     }
 
     public CSSChoice cssChoice() {
-        return switch(prefs.get("cssChoice", "builtin")) {
-            case String choice when choice.equals("custom") && prefs.get("cssCustomPath", null) instanceof String path
-                    -> new CSSChoice.Custom(Path.of(path));
-            default -> new CSSChoice.BuiltIn();
+        return switch(prefs.get("cssChoice", CSSChoice.BuiltInCSS.colors.name())) {
+            case String choice when choice.equals("custom") -> new CSSChoice.Custom(Path.of(prefs.get("cssCustomPath", "")));
+            case String choice -> CSSChoice.BuiltInCSS.parseValue(choice);
         };
     }
 
@@ -55,7 +54,9 @@ record AppConfig(Preferences prefs) {
 
     public void storeCSSChoice(CSSChoice choice) {
         switch (choice) {
-            case CSSChoice.BuiltIn() -> prefs.put("cssChoice", "builtin");
+            case CSSChoice.BuiltInCSS builtin -> {
+                prefs.put("cssChoice", builtin.name());
+            }
             case CSSChoice.Custom(Path path) -> {
                 prefs.put("cssChoice", "custom");
                 storeCSSCustomPath(path);
@@ -86,8 +87,23 @@ record AppConfig(Preferences prefs) {
         record Replay() implements SelectedTeam {}
     }
 
-    sealed interface CSSChoice {
-        record BuiltIn() implements CSSChoice {}
+    public sealed interface CSSChoice {
+        enum BuiltInCSS implements CSSChoice {
+            colors("/colors.css"),
+            simple("/simple.css") ;
+
+            public final String resource;
+            BuiltInCSS(String resource) {
+                this.resource = resource;
+            }
+
+            static BuiltInCSS parseValue(String string) {
+                return switch(string) {
+                    case "simple" -> simple;
+                    default       -> colors;
+                };
+            }
+        }
         record Custom(Path path) implements CSSChoice {}
     }
 

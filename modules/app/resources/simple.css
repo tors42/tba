@@ -1,0 +1,44 @@
+div {
+    margin-bottom: 1px;
+    padding: 2px 2px;
+}
+
+span.member {
+    font-weight: bold
+}
+
+span.foe {
+    font-style: italic
+}
+
+div.messages {
+    background-color: #00000000;
+    div {
+        animation: slideIn .5s linear forwards;
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        max-height: 0px;
+        transform: scale(0);
+        opacity: 0;
+    }
+    to {
+        max-height: 1000px;
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+th {
+    text-align: left;
+}
+th, td {
+    border-bottom: 1px solid #ddd;
+}
+
+.avenge, .standings, .tourbegin, .tourend, .streak, .join, .firstblood  {
+
+}

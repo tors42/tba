@@ -15,7 +15,6 @@ import javax.swing.SwingUtilities;
 import chariot.model.Arena;
 import chariot.model.Team;
 import app.Util.LabelAndField;
-import app.sink.HttpEventGUI;
 
 public record App(AppConfig config, Client client, Providers providers, List<ResolvedPipeline> pipelines, JFrame frame) {
 
@@ -39,8 +38,6 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         JMenuBar menubar = Menu.build(frame, config);
         frame.setJMenuBar(menubar);
-
-        config.storeSelectedTeam(new AppConfig.SelectedTeam.None());
 
         App app = new App(config, client, providers, pipelines, frame);
         app.relayoutComponents();
@@ -242,7 +239,10 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
             Preferences guiSinkConfig = config.prefs().node("gui.sink");
 
             switch(config.cssChoice()) {
-                case AppConfig.CSSChoice.BuiltIn()         -> guiSinkConfig.remove("stylesheetPath");
+                case AppConfig.CSSChoice.BuiltInCSS builtin -> {
+                    guiSinkConfig.remove("stylesheetPath");
+                    guiSinkConfig.put("builtin", builtin.name());
+                }
                 case AppConfig.CSSChoice.Custom(Path path) -> guiSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
             };
 
@@ -266,13 +266,13 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
 
                 switch(config.cssChoice()) {
                     case AppConfig.CSSChoice.Custom(Path path) -> httpSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
-                    case AppConfig.CSSChoice.BuiltIn() -> {
+                    case AppConfig.CSSChoice.BuiltInCSS builtin -> {
                         try {
                             // Use builtin from "app" instead of from "http.sink"
                             var tmp = Files.createTempFile("app-builtin-for-http.sink-", ".css");
                             tmp.toFile().deleteOnExit();
                             try (var os = Files.newOutputStream(tmp);
-                                 var is = App.class.getModule().getResourceAsStream(HttpEventGUI.GUIConfig.defaultCSSResource)) {
+                                 var is = App.class.getModule().getResourceAsStream(builtin.resource)) {
                                 is.transferTo(os);
                             }
                             httpSinkConfig.put("stylesheetPath", tmp.toAbsolutePath().toString());
@@ -296,6 +296,7 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
     }
 
 
+
     Thread startReplayThread(AppConfig config, Path replayPath, Runnable callback) {
         return Thread.ofPlatform().start(() -> {
             clearPipelines();
@@ -306,7 +307,10 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
             Preferences guiSinkConfig = config.prefs().node("gui.sink");
 
             switch(config.cssChoice()) {
-                case AppConfig.CSSChoice.BuiltIn()         -> guiSinkConfig.remove("stylesheetPath");
+                case AppConfig.CSSChoice.BuiltInCSS builtin -> {
+                    guiSinkConfig.remove("stylesheetPath");
+                    guiSinkConfig.put("builtin", builtin.name());
+                }
                 case AppConfig.CSSChoice.Custom(Path path) -> guiSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
             };
 
@@ -324,19 +328,18 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
                 Preferences httpSinkConfig = config.prefs().node("http.sink");
 
                 var bindAddress = config.bindAddress();
-                System.out.println("The bindAddress: " + bindAddress);
                 httpSinkConfig.put("bindAddress", bindAddress.getHostString());
                 httpSinkConfig.putInt("port", bindAddress.getPort());
 
                 switch(config.cssChoice()) {
                     case AppConfig.CSSChoice.Custom(Path path) -> httpSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
-                    case AppConfig.CSSChoice.BuiltIn() -> {
-                        try {
+                    case AppConfig.CSSChoice.BuiltInCSS builtin -> {
+                         try {
                             // Use builtin from "app" instead of from "http.sink"
                             var tmp = Files.createTempFile("app-builtin-for-http.sink-", ".css");
                             tmp.toFile().deleteOnExit();
                             try (var os = Files.newOutputStream(tmp);
-                                 var is = App.class.getModule().getResourceAsStream(HttpEventGUI.GUIConfig.defaultCSSResource)) {
+                                 var is = App.class.getModule().getResourceAsStream(builtin.resource)) {
                                 is.transferTo(os);
                             }
                             httpSinkConfig.put("stylesheetPath", tmp.toAbsolutePath().toString());
