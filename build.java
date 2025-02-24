@@ -76,9 +76,6 @@ void main(String[] args) throws Exception {
 
     run(jlink,
             "--add-options", " --enable-preview",
-            "--compress", "zip-9",
-            "--no-man-pages",
-            "--no-header-files",
             "--module-path", String.join(File.pathSeparator, modulePath.stream().map(Path::toString).toList()),
             "--add-modules", String.join(",", modules),
             "--launcher", "tba" + "=" + "app/app.App",

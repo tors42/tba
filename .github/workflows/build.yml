@@ -12,21 +12,21 @@ on:
 jobs:
   jlink:
     env:
-      JDK_BASE_URL: "https://download.java.net/java/GA/jdk23.0.2/6da2a6609d6e406f85c491fcb119101b/7/GPL/"
+      JDK_BASE_URL: "https://github.com/adoptium/temurin23-binaries/releases/download/jdk-23.0.2+7"
       build_os: linux
       build_arch: x64
       build_pkg: tar.gz
 
     strategy:
       matrix:
-        os:    [linux, windows, macos]
+        os:    [linux, windows, mac]
         arch:  [aarch64, x64]
         include:
           - os: linux
             pkg: tar.gz
           - os: windows
             pkg: zip
-          - os: macos
+          - os: mac
             pkg: tar.gz
         exclude:
           - os: windows
@@ -38,41 +38,37 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download target OS+Arch JDK
-        run: curl --output ${{ runner.temp }}/jdk.${{ matrix.pkg }} ${{ env.JDK_BASE_URL }}/openjdk-23.0.2_${{ matrix.os }}-${{ matrix.arch }}_bin.${{ matrix.pkg }}
+        run: curl --location --output ${{ runner.temp }}/jdk.${{ matrix.pkg }} ${{ env.JDK_BASE_URL }}/OpenJDK23U-jdk_${{ matrix.arch }}_${{ matrix.os }}_hotspot_23.0.2_7.${{ matrix.pkg }}
 
-      # In order to avoid knowing the directory structure within the different target OS+Arch archives,
-      # using setup-java action to unpack the target OS+Arch archive (probably performs unpack + JAVA_HOME + PATH)
-      # to be able to easily reference the target JDK location as $JAVA_HOME
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'jdkfile'
-          jdkFile: ${{ runner.temp }}/jdk.${{ matrix.pkg }}
-          java-version: '23'
-          architecture: ${{ matrix.arch }}
+      - name: Extract zip target JDK
+        if: ${{ matrix.pkg == 'zip' }}
+        run: |
+          mkdir ${{ runner.temp }}/targetjdk
+          unzip ${{ runner.temp }}/jdk.${{ matrix.pkg }} -d ${{ runner.temp }}/targetjdk
 
-      - name: Copy target JDK
-        run: cp -r ${{ env.JAVA_HOME }} ${{ runner.temp }}/targetjdk
+      - name: Extract tar.gz target JDK
+        if: ${{ matrix.pkg != 'zip' }}
+        run: |
+          mkdir ${{ runner.temp }}/targetjdk
+          tar xzf ${{ runner.temp }}/jdk.${{ matrix.pkg }} --directory ${{ runner.temp }}/targetjdk
 
       - name: Download build environment JDK
-        if: ${{ matrix.os != env.build_os || matrix.arch != env.build_arch }}
-        run: curl --output ${{ runner.temp }}/buildjdk.${{ env.build_pkg }} ${{ env.JDK_BASE_URL }}/openjdk-23.0.2_${{ env.build_os }}-${{ env.build_arch }}_bin.${{ env.build_pkg }}
+        run: curl --location --output ${{ runner.temp }}/buildjdk.${{ env.build_pkg }} ${{ env.JDK_BASE_URL }}/OpenJDK23U-jdk_${{ env.build_arch }}_${{ env.build_os }}_hotspot_23.0.2_7.${{ env.build_pkg }}
 
-      - uses: actions/setup-java@v4
-        if: ${{ matrix.os != env.build_os || matrix.arch != env.build_arch }}
-        with:
-          distribution: 'jdkfile'
-          jdkFile: ${{ runner.temp }}/buildjdk.${{ env.build_pkg}}
-          java-version: '23'
-          architecture: ${{ env.build_arch }}
+      - name: Extract tar.gz build JDK
+        run: |
+          mkdir ${{ runner.temp }}/buildjdk
+          tar xzf ${{ runner.temp }}/buildjdk.${{ env.build_pkg }} --directory ${{ runner.temp }}/buildjdk
 
       - name: Run build
         run: |
+          java="$(find ${{ runner.temp}}/buildjdk -name java)"
           version="${{ inputs.version }}"
           tstamp="$(git log -1 --format=%aI)"
           runtime="${{ matrix.os }}-${{ matrix.arch }}"
           jmods="$(dirname $(find ${{ runner.temp }}/targetjdk -name jmods))/jmods"
-          cmd="java --enable-preview build.java $version $tstamp $runtime $jmods"
-          java -Xinternalversion
+          cmd="$java --enable-preview build.java $version $tstamp $runtime $jmods"
+          $java -Xinternalversion
           echo $cmd
           $cmd
 
