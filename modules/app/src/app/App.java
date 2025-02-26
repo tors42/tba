@@ -148,8 +148,10 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
 
                 if (client.teams().byTeamId(id).orElse(null) instanceof Team team
                     && client.teams().arenaByTeamId(id).stream()
-                        .filter(arena -> arena.tourInfo().status() != TourInfo.Status.finished)
                         .filter(arena -> arena.teamBattle().isPresent())
+                        .limit(5)
+                        .filter(arena -> arena.tourInfo().status() != TourInfo.Status.finished)
+                        .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
                         .findFirst().orElse(null) instanceof ArenaLight arenaLight
                     && client.tournaments().arenaById(arenaLight.id()).orElse(null) instanceof Arena arena) {
 
