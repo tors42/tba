@@ -40,39 +40,36 @@ jobs:
       - name: Download target OS+Arch JDK
         run: curl --output ${{ runner.temp }}/jdk.${{ matrix.pkg }} ${{ env.JDK_BASE_URL }}/openjdk-23.0.2_${{ matrix.os }}-${{ matrix.arch }}_bin.${{ matrix.pkg }}
 
-      # In order to avoid knowing the directory structure within the different target OS+Arch archives,
-      # using setup-java action to unpack the target OS+Arch archive (probably performs unpack + JAVA_HOME + PATH)
-      # to be able to easily reference the target JDK location as $JAVA_HOME
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'jdkfile'
-          jdkFile: ${{ runner.temp }}/jdk.${{ matrix.pkg }}
-          java-version: '23'
-          architecture: ${{ matrix.arch }}
+      - name: Extract zip target JDK
+        if: ${{ matrix.pkg == 'zip' }}
+        run: |
+          mkdir ${{ runner.temp }}/targetjdk
+          unzip ${{ runner.temp }}/jdk.${{ matrix.pkg }} -d ${{ runner.temp }}/targetjdk
 
-      - name: Copy target JDK
-        run: cp -r ${{ env.JAVA_HOME }} ${{ runner.temp }}/targetjdk
+      - name: Extract tar.gz target JDK
+        if: ${{ matrix.pkg != 'zip' }}
+        run: |
+          mkdir ${{ runner.temp }}/targetjdk
+          tar xzf ${{ runner.temp }}/jdk.${{ matrix.pkg }} --directory ${{ runner.temp }}/targetjdk
 
       - name: Download build environment JDK
-        if: ${{ matrix.os != env.build_os || matrix.arch != env.build_arch }}
         run: curl --output ${{ runner.temp }}/buildjdk.${{ env.build_pkg }} ${{ env.JDK_BASE_URL }}/openjdk-23.0.2_${{ env.build_os }}-${{ env.build_arch }}_bin.${{ env.build_pkg }}
 
-      - uses: actions/setup-java@v4
-        if: ${{ matrix.os != env.build_os || matrix.arch != env.build_arch }}
-        with:
-          distribution: 'jdkfile'
-          jdkFile: ${{ runner.temp }}/buildjdk.${{ env.build_pkg}}
-          java-version: '23'
-          architecture: ${{ env.build_arch }}
+      - name: Extract tar.gz build JDK
+        run: |
+          mkdir ${{ runner.temp }}/buildjdk
+          tar xzf ${{ runner.temp }}/buildjdk.${{ env.build_pkg }} --directory ${{ runner.temp }}/buildjdk
+
 
       - name: Run build
         run: |
+          java="$(find ${{ runner.temp}}/buildjdk -name java)"
           version="${{ inputs.version }}"
           tstamp="$(git log -1 --format=%aI)"
           runtime="${{ matrix.os }}-${{ matrix.arch }}"
           jmods="$(dirname $(find ${{ runner.temp }}/targetjdk -name jmods))/jmods"
-          cmd="java --enable-preview build.java $version $tstamp $runtime $jmods"
-          java -Xinternalversion
+          cmd="$java --enable-preview build.java $version $tstamp $runtime $jmods"
+          $java -Xinternalversion
           echo $cmd
           $cmd
 
