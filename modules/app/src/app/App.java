@@ -8,10 +8,6 @@ import module chariot;
 
 import java.util.List;
 
-import javax.swing.JButton;
-import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
-
 import chariot.model.Arena;
 import chariot.model.Team;
 import app.Util.LabelAndField;
@@ -121,10 +117,14 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
             }
 
             case AppConfig.SelectedTeam.TeamIdAndName(String id, String name) -> {
-
-
+                record Tournament(String id, String name) {}
                 var teamComp = LabelAndField.of("Team:", new JLabel(name));
-                var tourComp = LabelAndField.of("Tournament:", new JLabel("<No tournament available>"));
+                var tourComp = LabelAndField.of("Tournament:", new JComboBox<Tournament>());
+
+                tourComp.field().setRenderer((_, value, _, _, _) -> new JLabel(switch(value) {
+                    case null -> "<No Team Battles today>";
+                    case Tournament(_, String tourName) -> tourName;
+                    }));
 
                 var teamPanel = Util.pairedComponents(List.of(teamComp, tourComp));
 
@@ -148,17 +148,36 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
 
                 if (client.teams().byTeamId(id).orElse(null) instanceof Team team
                     && client.teams().arenaByTeamId(id).stream()
+                        .takeWhile(arena -> arena.tourInfo().status() != TourInfo.Status.finished)
                         .filter(arena -> arena.teamBattle().isPresent())
-                        .limit(5)
-                        .filter(arena -> arena.tourInfo().status() != TourInfo.Status.finished)
+                        .filter(arena -> arena.tourInfo().startsAt().isBefore(ZonedDateTime.now().plusDays(1)))
                         .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
-                        .findFirst().orElse(null) instanceof ArenaLight arenaLight
-                    && client.tournaments().arenaById(arenaLight.id()).orElse(null) instanceof Arena arena) {
+                        .map(arena -> new Tournament(arena.id(), arena.tourInfo().name()))
+                        .toList() instanceof List<Tournament> tournaments) {
 
-                    tourComp.field().setText(arena.tourInfo().name());
+                    tournaments.forEach(tournament -> tourComp.field().addItem(tournament));
 
-                    startButton.setEnabled(true);
-                    startAction.set(callback -> startLiveThread(team, arena, config, callback));
+                    if (! tournaments.isEmpty()) {
+                        startButton.setEnabled(true);
+                        startAction.set(callback -> {
+                            return switch (tourComp.field().getSelectedIndex()) {
+                                case int index when index > -1 -> {
+                                    Tournament selectedTournament = tourComp.field().getItemAt(index);
+                                    yield switch (client.tournaments().arenaById(selectedTournament.id())) {
+                                        case Entry(Arena arena) -> startLiveThread(team, arena, config, callback);
+                                        case NoEntry nope -> Thread.ofPlatform().start(() -> {
+                                            System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), nope));
+                                            callback.run();
+                                        });
+                                    };
+                                }
+                                default -> Thread.ofPlatform().start(() -> {
+                                    System.out.println("No Team Battle selected");
+                                    callback.run();
+                                });
+                            };
+                        });
+                    }
                 }
             }
 

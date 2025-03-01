@@ -43,7 +43,7 @@ public interface Util {
         for (var pair : pairs) {
             sequentialGroup.addGroup(layout.createParallelGroup()
                     .addComponent(pair.label(), GroupLayout.Alignment.CENTER)
-                    .addComponent(pair.field()));
+                    .addComponent(pair.field(), GroupLayout.PREFERRED_SIZE, GroupLayout.PREFERRED_SIZE, GroupLayout.PREFERRED_SIZE));
         }
 
         layout.setVerticalGroup(sequentialGroup);
