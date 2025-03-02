@@ -165,7 +165,7 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
                                     Tournament selectedTournament = tourComp.field().getItemAt(index);
                                     yield switch (client.tournaments().arenaById(selectedTournament.id())) {
                                         case Entry(Arena arena) -> startLiveThread(team, arena, config, callback);
-                                        case NoEntry nope -> Thread.ofPlatform().start(() -> {
+                                        case NoEntry<Arena> nope -> Thread.ofPlatform().start(() -> {
                                             System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), nope));
                                             callback.run();
                                         });
