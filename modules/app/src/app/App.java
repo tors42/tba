@@ -147,7 +147,7 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
 
 
                 if (client.teams().byTeamId(id).orElse(null) instanceof Team team
-                    && client.teams().arenaByTeamId(id).stream()
+                    && client.teams().arenaByTeamId(id, 1000).stream()
                         .takeWhile(arena -> arena.tourInfo().status() != TourInfo.Status.finished)
                         .filter(arena -> arena.teamBattle().isPresent())
                         .filter(arena -> arena.tourInfo().startsAt().isBefore(ZonedDateTime.now().plusDays(1)))
