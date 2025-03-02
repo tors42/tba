@@ -114,7 +114,7 @@ public class Tour implements Source {
                         yield running;
                     }
 
-                    case Members(var members, var allParticipants) -> {
+                    case Participants(var members, var allParticipants) -> {
                         if (! (currentState instanceof State.WithData state)) yield currentState;
 
                         State.WithData nextState = state;
@@ -447,7 +447,7 @@ public class Tour implements Source {
                 .map(name -> name.toLowerCase(Locale.ROOT))
                 .collect(Collectors.toSet());
 
-            queue.offer(new Members(members, all));
+            queue.offer(new Participants(members, all));
         };
     }
 

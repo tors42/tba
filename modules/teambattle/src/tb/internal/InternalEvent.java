@@ -13,7 +13,7 @@ public sealed interface InternalEvent {
     record TourEnd() implements InternalEvent {}
 
     record MemberPoll() implements InternalEvent {}
-    record Members(Set<String> members, Set<String> allParticipants) implements InternalEvent {}
+    record Participants(Set<String> members, Set<String> allParticipants) implements InternalEvent {}
 
     record GameBegin(String id, String userId, String opponentId) implements InternalEvent {}
     sealed interface GameResult extends InternalEvent {
