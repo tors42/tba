@@ -117,20 +117,22 @@ public class Tour implements Source {
                     case Participants(var members, var allParticipants) -> {
                         if (! (currentState instanceof State.WithData state)) yield currentState;
 
-                        State.WithData nextState = state;
+                        State.WithData nextState = state.withMembers(new Members.Some(Set.copyOf(members)));
 
-                        if (! members.isEmpty()) {
-                            Set<String> newMembers = new HashSet<>(members);
-                            newMembers.removeAll(state.data().members());
-                            if (! newMembers.isEmpty()) {
+                        List<String> newMembers = switch (state.data().members()) {
+                            case Members.Some(var previousMembers) -> members.stream()
+                                .filter(Predicate.not(previousMembers::contains))
+                                .sorted()
+                                .toList();
+                            default -> List.of();
+                        };
 
-                                nextState = state.withMembers(Set.copyOf(members));
 
-                                // hmm, identify if we've recently went from Initial to Running,
-                                // then these reinforcements are actually the initial poll, not "joiners" showing up "after a while"...
-                                // Need something in the type system, i.e "Set<String> members" might not cut it?
-                                // Would need some initial state to differ between empty set and no set at all?
-                                internalEventQueue.offer(new Message(new TeamBattleEvent.Join(newMembers.stream().sorted().toList())));
+                        if (! newMembers.isEmpty()) {
+                            // Don't show new members as "recently" joined,
+                            // if we have just started the announce for this team battle.
+                            if (state.data().members() instanceof Members.Some) {
+                                internalEventQueue.offer(new Message(new TeamBattleEvent.Join(newMembers)));
                             }
                         }
 
@@ -149,7 +151,10 @@ public class Tour implements Source {
                                             var res = running.base().client().games().gameInfosByUserIds(updatedAllParticipants);
                                             var newStream = res.stream();
 
-                                            var membersRef = running.data().members();
+                                            Set<String> memberSet = switch(running.data().members()) {
+                                                case Members.Some(Set<String> value) -> value;
+                                                default -> Set.of();
+                                            };
 
                                             Thread.ofPlatform().daemon(false).name("small-monitor-" + updatedAllParticipants.size()).start(
                                                     () -> {
@@ -159,8 +164,8 @@ public class Tour implements Source {
                                                                     record IdColor(String id, Enums.Color color) {}
                                                                     var white = new IdColor(gameMeta.players().white().userId(), Enums.Color.white);
                                                                     var black = new IdColor(gameMeta.players().black().userId(), Enums.Color.black);
-                                                                    if (membersRef.contains(white.id()) || membersRef.contains(black.id())) {
-                                                                        var member = membersRef.contains(white.id()) ? white : black;
+                                                                    if (memberSet.contains(white.id()) || memberSet.contains(black.id())) {
+                                                                        var member = memberSet.contains(white.id()) ? white : black;
                                                                         var opponent = member.equals(white) ? black : white;
 
                                                                         internalEventQueue.offer(switch(gameMeta.winner()) {
@@ -195,10 +200,10 @@ public class Tour implements Source {
                                     }
                                 };
 
-                                yield running.withMonitor(updatedMonitor).withMembers(Set.copyOf(members));
+                                yield running.withMonitor(updatedMonitor).withMembers(new Members.Some(Set.copyOf(members)));
                             }
 
-                            default -> state.withMembers(Set.copyOf(members));
+                            default -> state.withMembers(new Members.Some(Set.copyOf(members)));
                         };
                     }
 
@@ -266,11 +271,16 @@ public class Tour implements Source {
             return new Base(team, updated, client);
         }
     }
-    record Data(Base base, Set<String> members, List<Accumulator<Void, Runnable>> tickAccumulators) {
+    sealed interface Members {
+        record Unset() implements Members {}
+        record Some(Set<String> members) implements Members {}
+    }
+
+    record Data(Base base, Members members, List<Accumulator<Void, Runnable>> tickAccumulators) {
         public Data withBase(Base updated) {
             return new Data(updated, members, tickAccumulators);
         }
-        public Data withMembers(Set<String> updated) {
+        public Data withMembers(Members updated) {
             return new Data(base, updated, tickAccumulators);
         }
         public Data withTickAccumulators(List<Accumulator<Void, Runnable>> updated) {
@@ -292,7 +302,7 @@ public class Tour implements Source {
         sealed interface WithData extends State {
             Data data();
             default Base base() { return data().base(); }
-            default WithData withMembers(Set<String> updated) {
+            default WithData withMembers(Members updated) {
                 return switch (this) {
                     case NotStarted state -> new NotStarted(state.data().withMembers(updated));
                     case Running state    -> new Running(state.data().withMembers(updated), state.monitor(), state.resultAccumulators());
@@ -331,7 +341,7 @@ public class Tour implements Source {
 
             // Normal flow
             case ZonedDateTime now when now.isBefore(arena.tourInfo().startsAt())
-                -> new NotStarted(new Data(base, Set.of(),
+                -> new NotStarted(new Data(base, new Members.Some(Set.of()),
                             List.of(
                                 new RepeatableAction(60,     arenaUpdate(base.client(), arena, queue)),
                                 new RepeatableAction(60, 60, members(base.client(), arena, base.team(), queue))
@@ -339,11 +349,11 @@ public class Tour implements Source {
 
             // Old tournament
             case ZonedDateTime now when now.isAfter(arena.tourInfo().startsAt().plus(arena.duration()))
-                -> new Ended(new Data(base, Set.of(), List.of()));
+                -> new Ended(new Data(base, new Members.Unset(), List.of()));
 
             // Ongoing tournament
             case ZonedDateTime _
-                -> new Running(new Data(base, Set.of(),
+                -> new Running(new Data(base, new Members.Unset(),
                             List.of(
                                 new RepeatableAction(60, arenaUpdate(base.client(), arena, queue)),
                                 new RepeatableAction(60, 60, members(base.client(), arena, base.team(), queue)),
