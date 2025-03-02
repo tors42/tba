@@ -436,12 +436,17 @@ public class Tour implements Source {
         Collectors.mapping(ArenaResult::username, Collectors.mapping(name -> name.toLowerCase(Locale.ROOT), Collectors.toSet()));
 
     static Runnable members(Client client, Arena arena, Team team, Queue<InternalEvent> queue) {
-        return () -> queue.offer(client.tournaments().resultsByArenaId(arena.id()).stream()
-                .collect(Collectors.teeing(
-                        Collectors.filtering(res -> res.team() instanceof Some(var teamId) && teamId.equals(team.id()),
-                            resultNameToIdCollector),
-                        resultNameToIdCollector,
-                        Participants::new)));
+        return () -> {
+            switch (client.tournaments().resultsByArenaId(arena.id())) {
+                case Entries(var stream) -> queue.offer(stream
+                        .collect(Collectors.teeing(
+                                Collectors.filtering(res -> res.team() instanceof Some(var teamId) && teamId.equals(team.id()),
+                                    resultNameToIdCollector),
+                                resultNameToIdCollector,
+                                Participants::new)));
+                case Fail(int status, var err) -> System.out.println("Arena results lookup failed - %d %s".formatted(status, err));
+            };
+        };
     }
 
 
