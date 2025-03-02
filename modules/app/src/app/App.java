@@ -310,6 +310,13 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
             // Maybe iterate through pipelines and find gui sink (JFrame),
             // and add hide-listener, and add unhide-option in menu...
 
+
+            // Temporary cooldown to avoid 429,
+            // in future try to reuse Arena/Team lookups,
+            // instead of looking up again...
+            try { Thread.sleep(5000);
+            } catch (InterruptedException ex) {}
+
             TBA.runPipelines(pipelines);
 
             callback.run();
