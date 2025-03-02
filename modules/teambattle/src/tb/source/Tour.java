@@ -432,23 +432,16 @@ public class Tour implements Source {
         return () -> client.tournaments().arenaById(arena.id()).ifPresent(updatedArena -> queue.offer(new ArenaUpdate(updatedArena)));
     }
 
+    static final Collector<ArenaResult, ?, Set<String>> resultNameToIdCollector =
+        Collectors.mapping(ArenaResult::username, Collectors.mapping(name -> name.toLowerCase(Locale.ROOT), Collectors.toSet()));
+
     static Runnable members(Client client, Arena arena, Team team, Queue<InternalEvent> queue) {
-        return () -> {
-            var arenaResults = client.tournaments().resultsByArenaId(arena.id()).stream().toList();
-
-            Set<String> members = arenaResults.stream()
-                .filter(res -> res.team() instanceof Some(var teamId) && teamId.equals(team.id()))
-                .map(ArenaResult::username)
-                .map(name -> name.toLowerCase(Locale.ROOT))
-                .collect(Collectors.toSet());
-
-            Set<String> all = arenaResults.stream()
-                .map(ArenaResult::username)
-                .map(name -> name.toLowerCase(Locale.ROOT))
-                .collect(Collectors.toSet());
-
-            queue.offer(new Participants(members, all));
-        };
+        return () -> queue.offer(client.tournaments().resultsByArenaId(arena.id()).stream()
+                .collect(Collectors.teeing(
+                        Collectors.filtering(res -> res.team() instanceof Some(var teamId) && teamId.equals(team.id()),
+                            resultNameToIdCollector),
+                        resultNameToIdCollector,
+                        Participants::new)));
     }
 
 
