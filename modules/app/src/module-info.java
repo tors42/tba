@@ -2,15 +2,13 @@ module app {
 
     requires tba.api;
 
+    requires teambattle;
+    requires teambattle.api;
+    requires teambattle.http;
+    requires teambattle.replay;
+
     requires chariot;
 
     requires java.prefs;
     requires java.desktop;
-
-    provides tba.api.SinkProvider with app.sink.HttpEventGUI;
-
-    uses tba.api.SourceProvider;
-    uses tba.api.SinkProvider;
-    uses tba.api.TransformerProvider;
-
 }

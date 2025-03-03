@@ -1,6 +1,8 @@
 module teambattle.http {
 
-    requires tba.api;
+    exports teambattle.http;
+
+    requires transitive tba.api;
     requires teambattle.api;
 
     requires jdk.httpserver;

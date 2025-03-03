@@ -1,7 +1,9 @@
 module teambattle.replay {
 
-    requires tba.api;
-    requires teambattle.api;
+    exports teambattle.replay;
+
+    requires transitive tba.api;
+    requires transitive teambattle.api;
 
     provides tba.api.SourceProvider
         with teambattle.replay.TeamBattleReplaySourceProvider;

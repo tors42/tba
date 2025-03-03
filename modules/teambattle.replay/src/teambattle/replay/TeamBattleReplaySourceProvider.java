@@ -44,7 +44,7 @@ public class TeamBattleReplaySourceProvider implements SourceProvider {
         };
     }
 
-    private static Optional<Config> createConfig(String filename, boolean speedup) {
+    public static Optional<Config> createConfig(String filename, boolean speedup) {
         if (! (filename instanceof String str)) return Optional.empty();
         Path path = Path.of(str);
         if (! Files.exists(path)) return Optional.empty();

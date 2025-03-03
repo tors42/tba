@@ -8,9 +8,20 @@ import module chariot;
 
 import java.util.List;
 
+import tba.api.Source;
+import tba.api.Sink;
+import tba.api.Transformer;
+
 import chariot.model.Arena;
 import chariot.model.Team;
+
+import teambattle.http.TeamBattleHttpSinkProvider;
+import teambattle.replay.TeamBattleReplaySourceProvider;
+import tb.source.TeamBattleSourceProvider;
+import tb.transformer.ToHttpEventProvider;
+
 import app.Util.LabelAndField;
+import app.sink.HttpEventGUI;
 
 public record App(AppConfig config, Client client, Providers providers, List<ResolvedPipeline> pipelines, JFrame frame) {
 
@@ -164,7 +175,7 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
                                 case int index when index > -1 -> {
                                     Tournament selectedTournament = tourComp.field().getItemAt(index);
                                     yield switch (client.tournaments().arenaById(selectedTournament.id())) {
-                                        case Entry(Arena arena) -> startLiveThread(team, arena, config, callback);
+                                        case Entry(Arena arena) -> startLiveThread(team, arena, callback);
                                         case NoEntry<Arena> nope -> Thread.ofPlatform().start(() -> {
                                             System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), nope));
                                             callback.run();
@@ -246,84 +257,34 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
         }
     }
 
-    Thread startLiveThread(Team team, Arena arena, AppConfig config, Runnable callback) {
+    Thread startLiveThread(Team team, Arena arena, Runnable callback) {
         return Thread.ofPlatform().start(() -> {
             System.out.println(team.name() + " " + arena.tourInfo().name());
             clearPipelines();
 
-            Preferences teambattleConfig = config.prefs().node("teambattle.source");
+            SourceProvider sourceProvider = new TeamBattleSourceProvider();
+            Config sourceConfig = new TeamBattleSourceProvider.TeamBattleSourceConfig(team, arena, client);
+            Source source = sourceProvider.of(sourceConfig);
 
-            teambattleConfig.put("teamId", team.id());
-            teambattleConfig.put("tourId", arena.id());
-            client.store(teambattleConfig.node("chariot"));
+            TransformerProvider transformerProvider = new ToHttpEventProvider();
+            Config transformerConfig = ToHttpEventProvider.TeamBattleTransformerConfig.of();
+            Transformer transformer = transformerProvider.of(transformerConfig);
 
-            Preferences guiSinkConfig = config.prefs().node("gui.sink");
+            SinkProvider sinkProvider = new HttpEventGUI();
+            Config sinkConfig = new HttpEventGUI.GUIConfig(config.cssChoice(), arena.tourInfo().name());
+            Sink sink = sinkProvider.of(sinkConfig);
 
-            switch(config.cssChoice()) {
-                case AppConfig.CSSChoice.BuiltInCSS builtin -> {
-                    guiSinkConfig.remove("stylesheetPath");
-                    guiSinkConfig.put("builtin", builtin.name());
-                }
-                case AppConfig.CSSChoice.Custom(Path path) -> guiSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
-            };
-
-            guiSinkConfig.put("title", "%s".formatted(arena.tourInfo().name()));
-
-            var teambattleSource  = TBA.providerAndConfig(providers().source().get("teambattle"), teambattleConfig);
-            var httpTransform = TBA.providerAndConfig(providers().transformer().get("teambattle.http"), config.prefs().node("tmp"));
-            var guiSink       = TBA.providerAndConfig(providers().sink().get("app.gui"), guiSinkConfig);
-
-            List<PipelineConfig> pipelineConfigs = new ArrayList<>();
-
-            pipelineConfigs.add(TBA.pipelineConfig(teambattleSource, httpTransform, guiSink));
+            pipelines.add(new ResolvedPipeline(source, List.of(transformer), sink));
 
             if (config.httpEnabled()) {
-                Preferences httpSinkConfig = config.prefs().node("http.sink");
-
-                var bindAddress = config.bindAddress();
-                System.out.println("The bindAddress: " + bindAddress);
-                httpSinkConfig.put("bindAddress", bindAddress.getHostString());
-                httpSinkConfig.putInt("port", bindAddress.getPort());
-
-                switch(config.cssChoice()) {
-                    case AppConfig.CSSChoice.Custom(Path path) -> httpSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
-                    case AppConfig.CSSChoice.BuiltInCSS builtin -> {
-                        try {
-                            // Use builtin from "app" instead of from "http.sink"
-                            var tmp = Files.createTempFile("app-builtin-for-http.sink-", ".css");
-                            tmp.toFile().deleteOnExit();
-                            try (var os = Files.newOutputStream(tmp);
-                                 var is = App.class.getModule().getResourceAsStream(builtin.resource)) {
-                                is.transferTo(os);
-                            }
-                            httpSinkConfig.put("stylesheetPath", tmp.toAbsolutePath().toString());
-                        } catch (IOException ex) { System.out.println("Failed to make app builtin css available for http.sink - " + ex.getMessage()); }
-                    }
-                };
-
-                var httpSink = TBA.providerAndConfig(providers.sink().get("http"), httpSinkConfig);
-                pipelineConfigs.add(TBA.pipelineConfig(teambattleSource, httpTransform, httpSink));
+                pipelines.add(buildHttpPipeline(source, transformer));
             }
-
-            pipelines.addAll(TBA.resolvePipelines(pipelineConfigs));
-
-            // Maybe iterate through pipelines and find gui sink (JFrame),
-            // and add hide-listener, and add unhide-option in menu...
-
-
-            // Temporary cooldown to avoid 429,
-            // in future try to reuse Arena/Team lookups,
-            // instead of looking up again...
-            try { Thread.sleep(5000);
-            } catch (InterruptedException ex) {}
 
             TBA.runPipelines(pipelines);
 
             callback.run();
         });
     }
-
-
 
     Thread startReplayThread(AppConfig config, Path replayPath, Runnable callback) {
         return Thread.ofPlatform().start(() -> {
@@ -332,62 +293,56 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
             Preferences replayConfig = config.prefs().node("replay.source");
             replayConfig.put("path", replayPath.toAbsolutePath().toString());
 
-            Preferences guiSinkConfig = config.prefs().node("gui.sink");
+            SourceProvider sourceProvider = new TeamBattleReplaySourceProvider();
+            Optional<Config> configOpt = TeamBattleReplaySourceProvider.createConfig(replayPath.toAbsolutePath().toString(), true);
+            Source source = configOpt.map(sourceProvider::of).orElseThrow(() -> new RuntimeException("Failed to create replay source"));
 
-            switch(config.cssChoice()) {
-                case AppConfig.CSSChoice.BuiltInCSS builtin -> {
-                    guiSinkConfig.remove("stylesheetPath");
-                    guiSinkConfig.put("builtin", builtin.name());
-                }
-                case AppConfig.CSSChoice.Custom(Path path) -> guiSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
-            };
+            TransformerProvider transformerProvider = new ToHttpEventProvider();
+            Config transformerConfig = ToHttpEventProvider.TeamBattleTransformerConfig.of();
+            Transformer transformer = transformerProvider.of(transformerConfig);
 
-            guiSinkConfig.put("title", "Replay");
+            SinkProvider sinkProvider = new HttpEventGUI();
+            Config sinkConfig = new HttpEventGUI.GUIConfig(config.cssChoice(), "Replay");
+            Sink sink = sinkProvider.of(sinkConfig);
 
-            var replaySource  = TBA.providerAndConfig(providers().source().get("teambattle.replay"), replayConfig);
-            var httpTransform = TBA.providerAndConfig(providers().transformer().get("teambattle.http"), config.prefs().node("tmp"));
-            var guiSink       = TBA.providerAndConfig(providers().sink().get("app.gui"), guiSinkConfig);
-
-            List<PipelineConfig> pipelineConfigs = new ArrayList<>();
-
-            pipelineConfigs.add(TBA.pipelineConfig(replaySource, httpTransform, guiSink));
+            pipelines.add(new ResolvedPipeline(source, List.of(transformer), sink));
 
             if (config.httpEnabled()) {
-                Preferences httpSinkConfig = config.prefs().node("http.sink");
-
-                var bindAddress = config.bindAddress();
-                httpSinkConfig.put("bindAddress", bindAddress.getHostString());
-                httpSinkConfig.putInt("port", bindAddress.getPort());
-
-                switch(config.cssChoice()) {
-                    case AppConfig.CSSChoice.Custom(Path path) -> httpSinkConfig.put("stylesheetPath", path.toAbsolutePath().toString());
-                    case AppConfig.CSSChoice.BuiltInCSS builtin -> {
-                         try {
-                            // Use builtin from "app" instead of from "http.sink"
-                            var tmp = Files.createTempFile("app-builtin-for-http.sink-", ".css");
-                            tmp.toFile().deleteOnExit();
-                            try (var os = Files.newOutputStream(tmp);
-                                 var is = App.class.getModule().getResourceAsStream(builtin.resource)) {
-                                is.transferTo(os);
-                            }
-                            httpSinkConfig.put("stylesheetPath", tmp.toAbsolutePath().toString());
-                        } catch (IOException ex) { System.out.println("Failed to make app builtin css available for http.sink - " + ex.getMessage()); }
-                    }
-                };
-
-                var httpSink = TBA.providerAndConfig(providers.sink().get("http"), httpSinkConfig);
-                pipelineConfigs.add(TBA.pipelineConfig(replaySource, httpTransform, httpSink));
+                pipelines.add(buildHttpPipeline(source, transformer));
             }
-
-            pipelines.addAll(TBA.resolvePipelines(pipelineConfigs));
-
-            // Maybe iterate through pipelines and find gui sink (JFrame),
-            // and add hide-listener, and add unhide-option in menu...
 
             TBA.runPipelines(pipelines);
 
             callback.run();
         });
+    }
+
+    private ResolvedPipeline buildHttpPipeline(Source source, Transformer transformer) {
+        Path cssPath = switch(config.cssChoice()) {
+            case AppConfig.CSSChoice.Custom(Path path) -> path;
+            case AppConfig.CSSChoice.BuiltInCSS builtin -> {
+                try {
+                    // Use builtin from "app" instead of from "http.sink"
+                    var tmp = Files.createTempFile("app-builtin-for-http.sink-", ".css");
+                    tmp.toFile().deleteOnExit();
+                    try (var os = Files.newOutputStream(tmp);
+                         var is = App.class.getModule().getResourceAsStream(builtin.resource)) {
+                        is.transferTo(os);
+                    }
+                    yield tmp;
+                } catch (IOException ex) {
+                    System.out.println("Failed to make app builtin css available for http.sink - " + ex.getMessage());
+                    throw new UncheckedIOException(ex);
+                }
+            }
+        };
+
+        SinkProvider httpSinkProvider = new TeamBattleHttpSinkProvider();
+        var bindAddress = config.bindAddress();
+        var address = TeamBattleHttpSinkProvider.HttpSinkConfig.address(bindAddress.getAddress(), bindAddress.getPort());
+        Config httpSinkConfig = TeamBattleHttpSinkProvider.HttpSinkConfig.of(address, cssPath);
+        Sink httpSink = httpSinkProvider.of(httpSinkConfig);
+        return new ResolvedPipeline(source, List.of(transformer), httpSink);
     }
 
     void clearPipelines() {

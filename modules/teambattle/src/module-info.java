@@ -1,8 +1,11 @@
 module teambattle {
 
-    requires tba.api;
+    exports tb.source;
+    exports tb.transformer;
 
-    requires chariot;
+    requires transitive tba.api;
+    requires transitive chariot;
+
     requires teambattle.api;
 
     provides tba.api.SourceProvider

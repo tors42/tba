@@ -79,7 +79,7 @@ public class ToHttpEventProvider implements TransformerProvider {
         };
     }
 
-    sealed interface TeamBattleTransformerConfig extends Config {
+    public sealed interface TeamBattleTransformerConfig extends Config {
 
         static TeamBattleTransformerConfig of() {
             return new Empty();
