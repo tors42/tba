@@ -23,7 +23,7 @@ import tb.transformer.ToHttpEventProvider;
 import app.Util.LabelAndField;
 import app.sink.HttpEventGUI;
 
-public record App(AppConfig config, Client client, Providers providers, List<ResolvedPipeline> pipelines, JFrame frame) {
+public record App(AppConfig config, Client client, List<ResolvedPipeline> pipelines, JFrame frame) {
 
     public static void main(String[] args) throws InterruptedException {
 
@@ -37,7 +37,6 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
 
 
     static App of(AppConfig config, Client client) {
-        Providers providers = TBA.loadProviders();
         List<ResolvedPipeline> pipelines = Collections.synchronizedList(new ArrayList<>());
 
         JFrame frame = new JFrame("Team Battle Announcer");
@@ -46,7 +45,7 @@ public record App(AppConfig config, Client client, Providers providers, List<Res
         JMenuBar menubar = Menu.build(frame, config);
         frame.setJMenuBar(menubar);
 
-        App app = new App(config, client, providers, pipelines, frame);
+        App app = new App(config, client, pipelines, frame);
         app.relayoutComponents();
         return app;
     }
