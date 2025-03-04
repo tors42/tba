@@ -1,19 +1,11 @@
 package app;
 
 import module java.base;
-import module java.desktop;
-
 import module tba.api;
 import module chariot;
 
 import java.util.List;
-
-import tba.api.Source;
-import tba.api.Sink;
-import tba.api.Transformer;
-
 import chariot.model.Arena;
-import chariot.model.Team;
 
 import teambattle.http.TeamBattleHttpSinkProvider;
 import teambattle.replay.TeamBattleReplaySourceProvider;
@@ -22,6 +14,9 @@ import tb.transformer.ToHttpEventProvider;
 
 import app.Util.LabelAndField;
 import app.sink.HttpEventGUI;
+
+import java.awt.*;
+import javax.swing.*;
 
 public record App(AppConfig config, Client client, List<ResolvedPipeline> pipelines, JFrame frame) {
 
