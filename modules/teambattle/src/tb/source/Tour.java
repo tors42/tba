@@ -1,7 +1,6 @@
 package tb.source;
 
 import module java.base;
-import java.io.ObjectOutputStream;
 
 import module tba.api;
 import module teambattle.api;
@@ -15,27 +14,21 @@ import tb.internal.InternalEvent.*;
 
 public class Tour implements Source {
 
-    State currentState;
     boolean done = false;
-    List<Queue<TeamBattleEvent>> externalQueues = new CopyOnWriteArrayList<>();
+    State currentState;
 
+    final List<Queue<TeamBattleEvent>> externalQueues = new CopyOnWriteArrayList<>();
+    final AtomicInteger gameStreamCount = new AtomicInteger();
+    final int maxNumberOfGamesPerStream;
     final ObjectOutputStream oos;
     final Map<String, User> cache = new ConcurrentHashMap<>();
-    final Function<String, String> nameRenderer = id -> {
-        try {
-            User cachedUser = cache.computeIfAbsent(id, _ -> switch(currentState.base().client().users().byId(id)) {
-                case Entry(var user) -> user;
-                default -> null;
-            });
-            return cachedUser == null ? id : cachedUser.name();
-        } catch (Exception e) { e.printStackTrace(); }
-        return null;
-    };
-
 
     public Tour(Team team, Arena arena, Client client) {
         currentState = new Initial(new Base(team, arena, client));
-
+        maxNumberOfGamesPerStream = switch(client) {
+            case ClientAuth _ -> 1000;
+            case Client _     ->  500;
+        };
         oos = initializeSerializationMaybe(team, arena);
     }
 
@@ -101,23 +94,136 @@ public class Tour implements Source {
                         yield currentState;
                     }
 
-                    // hmm, possibly only when Large monitor? Not needed for Small
-                    case MemberPoll() -> {
+                    case MemberPoll memberPoll -> {
                         if (! (currentState instanceof Running running)) yield currentState;
 
-                        // TODO
+                        if (running.monitor() instanceof Large monitor) {
 
-                        // if large tournament,
-                        // check if any members are not actively monitored (i.e "waiting"),
-                        // and them to gamemeta-stream and move them to "playing"
+                            Set<String> existingMembersAndMembersWithSuccessfullyAddedGames = new HashSet<>(monitor.currentlyMonitoredMemberIds());
+
+                            List<StreamMeta> nonExpiredMetas = monitor.metas().stream()
+                                .<StreamMeta>mapMulti( (meta, mapper) -> {
+                                    if (meta.gameIdStatus().size() == maxNumberOfGamesPerStream
+                                        && meta.gameIdStatus().values().stream().allMatch(Boolean::booleanValue)) {
+                                        meta.byGameIds().close();
+                                    } else {
+                                        mapper.accept(meta);
+                                    }
+                                })
+                                .toList();
+
+                            int remainingRoom = switch(nonExpiredMetas) {
+                                case List<StreamMeta> list when list.isEmpty() -> 0;
+                                case List<StreamMeta> list -> maxNumberOfGamesPerStream - list.getLast().gameIdStatus().size();
+                            };
+
+                            List<PlayingMember> membersWithNewlyStartedGamesAsList = memberPoll.playingMembers().stream().toList();
+
+                            List<PlayingMember> membersToFillRemaining = membersWithNewlyStartedGamesAsList.stream()
+                                .limit(remainingRoom)
+                                .toList();
+
+                            if (! membersToFillRemaining.isEmpty()) {
+                                StreamMeta metaWithRemaining = nonExpiredMetas.getLast();
+                                Set<String> gameIds = membersToFillRemaining.stream()
+                                    .map(PlayingMember::gameId)
+                                    .collect(Collectors.toSet());
+                                switch (currentState.base().client().games().addGameIdsToStream(metaWithRemaining.streamId(), gameIds)) {
+                                    case Fail(int status, var err) -> System.err.println("""
+                                            Failed to add %d games to (already holding %d) stream %s
+                                            %d - %s
+                                            Hoping for better luck in the future.""".formatted(
+                                                gameIds.size(), metaWithRemaining.gameIdStatus().size(), metaWithRemaining.streamId(),
+                                                status, err));
+                                    default -> {
+                                        existingMembersAndMembersWithSuccessfullyAddedGames.addAll(
+                                                membersToFillRemaining.stream()
+                                                .map(PlayingMember::userId)
+                                                .collect(Collectors.toSet()));
+                                        for (String gameId : gameIds) {
+                                            metaWithRemaining.gameIdStatus().put(gameId, false);
+                                        }
+                                    }
+                                }
+                            }
+
+                            List<List<PlayingMember>> membersToCreateNewBatchesFor = membersWithNewlyStartedGamesAsList.stream()
+                                .skip(remainingRoom)
+                                .gather(Gatherers.windowFixed(maxNumberOfGamesPerStream))
+                                .toList();
+
+
+                            List<StreamMeta> newMetas = membersToCreateNewBatchesFor.stream().map(batch -> {
+                                String streamId = "stream-games-by-ids-%03d".formatted(gameStreamCount.incrementAndGet());
+                                Set<String> gameIds = batch.stream().map(PlayingMember::gameId).collect(Collectors.toSet());
+
+                                Stream<GameMeta> byGameIds = switch (currentState.base().client().games().gameInfosByGameIds(streamId, gameIds)) {
+                                    case Entries(var stream) -> {
+                                        existingMembersAndMembersWithSuccessfullyAddedGames.addAll(
+                                                batch.stream().map(PlayingMember::userId).collect(Collectors.toSet()));
+                                        yield stream;
+                                    }
+                                    case Fail(int status, var err) -> {
+                                        System.err.println("""
+                                                Failed to open stream %s for %d game ids.
+                                                %d - %s
+                                                """.formatted(streamId, gameIds.size(), status, err));
+                                        yield Stream.of();
+                                    }
+                                };
+
+                                Thread.ofPlatform().name("large-monitor-%s".formatted(streamId)).start(() -> {
+                                    try {
+                                        byGameIds
+                                            .map(this::resultOfMember)
+                                            .filter(Optional::isPresent)
+                                            .map(Optional::get)
+                                            .forEach(internalEventQueue::offer);
+                                    } catch (UncheckedIOException unchecked) {
+                                        // Stream.forEach(...)
+                                        // We are expecting to be closed final game result of his stream has been reported.
+                                        // Some verification that the unchecked was caused by that should be added,
+                                        // ie if (expectedClose) { silently exit } else { retry stream - the close was unexpected! }
+                                    }});
+
+                                Map<String, Boolean> gameIdStatus = gameIds.stream()
+                                    .collect(Collectors.toMap(Function.identity(),  _ -> Boolean.FALSE));
+
+                                StreamMeta meta = new StreamMeta(byGameIds, gameIdStatus, streamId);
+                                return meta;
+                            }).toList();
+
+                            running = running.withMonitor(new Large(
+                                        Stream.concat(nonExpiredMetas.stream(), newMetas.stream()).toList(),
+                                        existingMembersAndMembersWithSuccessfullyAddedGames));
+                        }
+
+
+                        if (System.getenv("DEBUG_MEMBERS") instanceof String _) {
+                            memberPoll.playingMembers().stream()
+                                .sorted(Comparator.comparing(PlayingMember::userId))
+                                .forEach(pm -> System.out.println("https://lichess.org/%s started by %s".formatted(pm.gameId(), pm.userId())));
+
+                            if (running.monitor() instanceof Large(_, var monitored)) {
+                                System.out.println("Members with ongoing games:\n%s".formatted(
+                                            monitored.stream().sorted().toList()));
+                                System.out.println("Members without games:\n%s".formatted(
+                                            currentMembers().stream()
+                                                .filter(Predicate.not(monitored::contains))
+                                                .sorted().toList()));
+                            }
+                        }
 
                         yield running;
                     }
 
-                    case Participants(var members, var allParticipants) -> {
-                        if (! (currentState instanceof State.WithData state)) yield currentState;
+                    case Participants participants -> {
+                        Set<String> members = participants.memberIds();
+                        Set<String> allParticipants = participants.allParticipantIds();
 
-                        State.WithData nextState = state.withMembers(new Members.Some(Set.copyOf(members)));
+                        if (! (currentState instanceof WithData state)) yield currentState;
+
+                        WithData nextState = state.withMembers(new Members.Some(Set.copyOf(members)));
 
                         List<String> newMembers = switch (state.data().members()) {
                             case Members.Some(var previousMembers) -> members.stream()
@@ -139,63 +245,66 @@ public class Tour implements Source {
                         yield switch(nextState) {
                             case Running running -> {
                                 ResultsMonitor updatedMonitor = switch(running.monitor()) {
-                                    case Small(var oldStream, var oldUsers) -> {
+                                    case Small(Stream<GameMeta> oldStream, Set<String> oldUsers) -> {
                                         if (oldUsers.equals(allParticipants)) yield running.monitor();
+
+                                        // Participant update, close the now outdated stream
+                                        oldStream.close();
 
                                         var updatedAllParticipants = Set.copyOf(allParticipants);
                                         if (updatedAllParticipants.size() <= 300) {
-
-                                            oldStream.close();
-
-                                            // TODO, error check / retry
-                                            var res = running.base().client().games().gameInfosByUserIds(updatedAllParticipants);
-                                            var newStream = res.stream();
-
-                                            Set<String> memberSet = switch(running.data().members()) {
-                                                case Members.Some(Set<String> value) -> value;
-                                                default -> Set.of();
+                                            Stream<GameMeta> newStream = switch(running.base().client().games().gameInfosByUserIds(updatedAllParticipants)) {
+                                                case Entries(var stream) -> stream;
+                                                case Fail(int status, var err) -> {
+                                                    System.err.println("""
+                                                            Failed to open game stream of %d users...
+                                                            %d - %s
+                                                            Hoping for better luck in a minute.""".formatted(updatedAllParticipants.size(), status, err));
+                                                    yield Stream.of();
+                                                }
                                             };
 
-                                            Thread.ofPlatform().daemon(false).name("small-monitor-" + updatedAllParticipants.size()).start(
-                                                    () -> {
-                                                        try {
-                                                            newStream.forEach(gameMeta -> {
-                                                                if (gameMeta.status().status() > Enums.Status.started.status()) {
-                                                                    record IdColor(String id, Enums.Color color) {}
-                                                                    var white = new IdColor(gameMeta.players().white().userId(), Enums.Color.white);
-                                                                    var black = new IdColor(gameMeta.players().black().userId(), Enums.Color.black);
-                                                                    if (memberSet.contains(white.id()) || memberSet.contains(black.id())) {
-                                                                        var member = memberSet.contains(white.id()) ? white : black;
-                                                                        var opponent = member.equals(white) ? black : white;
-
-                                                                        internalEventQueue.offer(switch(gameMeta.winner()) {
-                                                                            case Some(var color) when color == member.color
-                                                                                -> new Win(gameMeta.id(), member.id(), opponent.id());
-                                                                            case Some(_) -> new Loss(gameMeta.id(), member.id(), opponent.id());
-                                                                            case Empty() -> new Draw(gameMeta.id(), member.id(), opponent.id());
-                                                                        });
-                                                                      }
-                                                                }
-                                                            });
-                                                        } catch (UncheckedIOException unchecked) {
-                                                            // Stream.forEach(...)
-                                                            // We are expecting to be closed when new members join.
-                                                            // Some verification that the unchecked was caused by that should be added,
-                                                            // ie if (expectedClose) { silently exit } else { retry stream - the close was unexpected! }
-                                                        }
-                                                    });
-
+                                            Thread.ofPlatform().name("small-monitor-" + updatedAllParticipants.size()).start(() -> {
+                                                try {
+                                                    newStream
+                                                        .map(this::resultOfMember)
+                                                        .filter(Optional::isPresent)
+                                                        .map(Optional::get)
+                                                        .forEach(internalEventQueue::offer);
+                                                } catch (UncheckedIOException unchecked) {
+                                                    // Stream.forEach(...)
+                                                    // We are expecting to be closed when new members join.
+                                                    // Some verification that the unchecked was caused by that should be added,
+                                                    // ie if (expectedClose) { silently exit } else { retry stream - the close was unexpected! }
+                                                }});
 
                                             yield new Small(newStream, updatedAllParticipants);
 
                                         } else {
-                                            // TODO, handle Large monitor
-                                            yield running.monitor();
+                                            // We just now grew from Small to Large,
+                                            // switch mode to start performing MemberPoll
+
+                                            Set<String> membersToPoll = participants.members().stream()
+                                                .filter(Predicate.not(ParticipantStatus::withdraw))
+                                                .map(ParticipantStatus::userId)
+                                                .collect(Collectors.toSet());
+
+                                            initiateMemberPoll(membersToPoll, internalEventQueue, running.base().client());
+
+                                            yield new Large(List.of(), Set.of());
                                         }
                                     }
 
-                                    case Large(var stream, var gameIds, var streamId) -> {
-                                        // TODO, handle Large monitor
+                                    case Large(_, Set<String> currentlyMonitoredMemberIds) ->  {
+
+                                        Set<String> membersToPoll = participants.members().stream()
+                                            .filter(Predicate.not(ParticipantStatus::withdraw))
+                                            .filter(participant -> ! currentlyMonitoredMemberIds.contains(participant.userId()))
+                                            .map(ParticipantStatus::userId)
+                                            .collect(Collectors.toSet());
+
+                                        initiateMemberPoll(membersToPoll, internalEventQueue, running.base().client());
+
                                         yield running.monitor();
                                     }
                                 };
@@ -222,9 +331,25 @@ public class Tour implements Source {
 
                         var updatedAccumulators = List.copyOf(accumulatorsAndValues.accumulators());
 
-                        // That a result came in,
-                        // must mean that a game is now over,
-                        // so a player should also be moved from "playing" to "waiting" (hmm, if Large monitor, yeah?)
+                        // A result just came in...
+                        // If we have a Large monitor, it means that a "currently playing" user should be removed,
+                        // so they will be probed for new games!
+                        if (running.monitor() instanceof Large(List<StreamMeta> metas, Set<String> currentlyMonitoredMemberIds)) {
+
+                            Set<String> remainingUserIds = currentlyMonitoredMemberIds.stream()
+                                .filter(id -> ! id.equals(result.userId()))
+                                .collect(Collectors.toSet());
+
+                            // Mutate gameIdStatus map...
+                            for (StreamMeta streamMeta : metas) {
+                                if (streamMeta.gameIdStatus().containsKey(result.gameId())) {
+                                    streamMeta.gameIdStatus().put(result.gameId(), true);
+                                }
+                            }
+
+                            running = running.withMonitor(new Large(metas, remainingUserIds));
+                        }
+
 
                         yield running.withResultAccumulators(updatedAccumulators);
                     }
@@ -239,7 +364,7 @@ public class Tour implements Source {
 
                     case Message(TeamBattleEvent eventWithIds) -> {
 
-                        TeamBattleEvent eventWithNames = EventRenderer.replaceNames(eventWithIds, nameRenderer, nameRenderer);
+                        TeamBattleEvent eventWithNames = EventRenderer.replaceNames(eventWithIds, this::nameRenderer, this::nameRenderer);
 
                         for (var queue : externalQueues) {
                             queue.add(eventWithNames);
@@ -265,12 +390,81 @@ public class Tour implements Source {
         done = true;
     }
 
+    Set<String> currentMembers() {
+        return switch(currentState) {
+            case WithData withData -> switch (withData.data().members()) {
+                case Members.Some(Set<String> members) -> members;
+                case Members.Unset() -> Set.of();
+            };
+            default -> Set.of();
+        };
+    }
+
+    String nameRenderer(String id) {
+        try {
+            User cachedUser = cache.computeIfAbsent(id, _ -> switch(currentState.base().client().users().byId(id)) {
+                case Entry(var user) -> user;
+                default -> null;
+            });
+            return cachedUser == null ? id : cachedUser.name();
+        } catch (Exception e) { e.printStackTrace(); }
+        return null;
+    }
+
+    Optional<GameResult> resultOfMember(GameMeta gameMeta) {
+        if (gameMeta.status().status() > Enums.Status.started.status()) {
+            record IdColor(String id, Enums.Color color) {}
+            var white = new IdColor(gameMeta.players().white().userId(), Enums.Color.white);
+            var black = new IdColor(gameMeta.players().black().userId(), Enums.Color.black);
+
+            Set<String> memberSet = currentMembers();
+
+            if (memberSet.contains(white.id()) || memberSet.contains(black.id())) {
+                var member = memberSet.contains(white.id()) ? white : black;
+                var opponent = member.equals(white) ? black : white;
+
+                return Optional.of(switch(gameMeta.winner()) {
+                    case Some(var color) when color == member.color
+                        -> new Win(gameMeta.id(), member.id(), opponent.id());
+                    case Some(_) -> new Loss(gameMeta.id(), member.id(), opponent.id());
+                    case Empty() -> new Draw(gameMeta.id(), member.id(), opponent.id());
+                });
+            }
+        }
+        return Optional.empty();
+    }
+
+    void initiateMemberPoll(Set<String> membersToPoll, BlockingQueue<InternalEvent> internalEventQueue, Client client) {
+        if (membersToPoll.isEmpty()) {
+            internalEventQueue.offer(new MemberPoll(Set.of()));
+        } else {
+            Thread.ofPlatform().name("large-monitor-poll-" + membersToPoll.size()).start(() ->
+                    internalEventQueue.offer(new MemberPoll(switch(client.users()
+                                .statusByIds(membersToPoll, p -> p.withGameIds())) {
+                        case Entries(var stream) -> stream
+                            .filter(UserStatus::online)
+                            .filter(member -> member.playingGameId().isPresent())
+                            .map(member -> new PlayingMember(member.id(), member.playingGameId().get()))
+                            .collect(Collectors.toSet());
+                        case Fail(int status, var err) -> {
+                            System.err.println("""
+                                    Failed to poll %d members for game info
+                                    %d - %s
+                                    Hoping for better luck in a minute.""".formatted(
+                                        membersToPoll.size(),
+                                        status, err));
+                            yield Set.of();
+                        }
+                    })));
+        }
+    }
 
     record Base(Team team, Arena arena, Client client) {
         public Base withArena(Arena updated) {
             return new Base(team, updated, client);
         }
     }
+
     sealed interface Members {
         record Unset() implements Members {}
         record Some(Set<String> members) implements Members {}
@@ -290,26 +484,12 @@ public class Tour implements Source {
 
     sealed interface ResultsMonitor {}
     record Small(Stream<GameMeta> byUserIds, Set<String> userIds) implements ResultsMonitor {}
-    record Large(Stream<GameMeta> byGameIds, Set<String> gameIds, String streamId) implements ResultsMonitor {}
+    record Large(List<StreamMeta> metas, Set<String> currentlyMonitoredMemberIds) implements ResultsMonitor {}
 
-    // - ArenaUpdate
-    // - TeamMembersUpdate
-    // - StandingsUpdate
-    // - if large MembersGamePoll
+    record StreamMeta(Stream<GameMeta> byGameIds, Map<String, Boolean> gameIdStatus, String streamId) {}
 
-    sealed interface State {
+    sealed interface State permits Initial, WithData {
         Base base();
-        sealed interface WithData extends State {
-            Data data();
-            default Base base() { return data().base(); }
-            default WithData withMembers(Members updated) {
-                return switch (this) {
-                    case NotStarted state -> new NotStarted(state.data().withMembers(updated));
-                    case Running state    -> new Running(state.data().withMembers(updated), state.monitor(), state.resultAccumulators());
-                    case Ended state      -> new Ended(state.data().withMembers(updated));
-                };
-            }
-        }
 
         default State withArena(Arena updated) {
             return switch (this) {
@@ -321,9 +501,21 @@ public class Tour implements Source {
         }
     }
 
+    sealed interface WithData extends State {
+        Data data();
+        default Base base() { return data().base(); }
+        default WithData withMembers(Members updated) {
+            return switch (this) {
+                case NotStarted state -> new NotStarted(state.data().withMembers(updated));
+                case Running state    -> new Running(state.data().withMembers(updated), state.monitor(), state.resultAccumulators());
+                case Ended state      -> new Ended(state.data().withMembers(updated));
+            };
+        }
+    }
+
     record Initial(Base base) implements State {}
-    record NotStarted(Data data) implements State.WithData {}
-    record Running(Data data, ResultsMonitor monitor, List<Accumulator<InternalEvent.GameResult, TeamBattleEvent>> resultAccumulators) implements State.WithData {
+    record NotStarted(Data data) implements WithData {}
+    record Running(Data data, ResultsMonitor monitor, List<Accumulator<InternalEvent.GameResult, TeamBattleEvent>> resultAccumulators) implements WithData {
         public Running withResultAccumulators(List<Accumulator<GameResult, TeamBattleEvent>> updated) {
             return new Running(data(), monitor(), updated);
         }
@@ -331,7 +523,7 @@ public class Tour implements Source {
             return new Running(data(), updated, resultAccumulators());
         }
     }
-    record Ended(Data data) implements State.WithData {}
+    record Ended(Data data) implements WithData {}
 
 
     State tickInitial(Initial initial, Queue<InternalEvent> queue) {
@@ -442,8 +634,8 @@ public class Tour implements Source {
         return () -> client.tournaments().arenaById(arena.id()).ifPresent(updatedArena -> queue.offer(new ArenaUpdate(updatedArena)));
     }
 
-    static final Collector<ArenaResult, ?, Set<String>> resultNameToIdCollector =
-        Collectors.mapping(ArenaResult::username, Collectors.mapping(name -> name.toLowerCase(Locale.ROOT), Collectors.toSet()));
+    static final Collector<ArenaResult, ?, Set<ParticipantStatus>> resultToParticipantStatusCollector =
+        Collectors.mapping(result -> new ParticipantStatus(result.username().toLowerCase(Locale.ROOT), result.withdraw()), Collectors.toSet());
 
     static Runnable members(Client client, Arena arena, Team team, Queue<InternalEvent> queue) {
         return () -> {
@@ -451,10 +643,10 @@ public class Tour implements Source {
                 case Entries(var stream) -> queue.offer(stream
                         .collect(Collectors.teeing(
                                 Collectors.filtering(res -> res.team() instanceof Some(var teamId) && teamId.equals(team.id()),
-                                    resultNameToIdCollector),
-                                resultNameToIdCollector,
+                                    resultToParticipantStatusCollector),
+                                resultToParticipantStatusCollector,
                                 Participants::new)));
-                case Fail(int status, var err) -> System.out.println("Arena results lookup failed - %d %s".formatted(status, err));
+                case Fail(int status, var err) -> System.err.println("Arena results lookup failed - %d %s".formatted(status, err));
             };
         };
     }
