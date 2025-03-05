@@ -5,8 +5,7 @@ module teambattle {
 
     requires transitive tba.api;
     requires transitive chariot;
-
-    requires teambattle.api;
+    requires transitive teambattle.api;
 
     provides tba.api.SourceProvider
         with tb.source.TeamBattleSourceProvider;
@@ -14,7 +13,5 @@ module teambattle {
     provides tba.api.TransformerProvider
         with tb.transformer.ToTextEventProvider,
              tb.transformer.ToHttpEventProvider;
-
-
 
 }
