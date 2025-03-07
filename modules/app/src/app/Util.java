@@ -1,15 +1,14 @@
 package app;
 
+import module java.base;
 import module java.desktop;
 
 import java.util.List;
-
 import javax.swing.GroupLayout;
 
 import app.AppConfig.SelectedTeam;
 import app.AppConfig.SelectedTeam.*;
 import chariot.Client;
-
 
 public interface Util {
 
@@ -106,13 +105,14 @@ public interface Util {
 
         JPanel byTeamNamePanel = new JPanel();
         JPanel byUserIdPanel = new JPanel();
+        JPanel byTeamIdPanel = new JPanel();
         JPanel testPanel = new JPanel();
 
         if (current instanceof Replay) {
             testPanel.setVisible(false);
         }
 
-        List.of(byTeamNamePanel, byUserIdPanel, testPanel).forEach(comp -> {
+        List.of(byTeamNamePanel, byUserIdPanel, byTeamIdPanel, testPanel).forEach(comp -> {
             comp.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
             centerPanels.add(comp);
             comp.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -129,10 +129,30 @@ public interface Util {
             String teamNameSearch = sbtnField.getText();
             if (! teamNameSearch.isBlank()) {
                 comboBox.removeAllItems();
-                client.teams().search(teamNameSearch).stream()
-                    .limit(5)
+
+                String termForSorting = teamNameSearch.toLowerCase(Locale.ROOT).replace("-", " ");
+
+                List<String> incrementalParts = termForSorting.chars().mapToObj(Character::toString)
+                    .gather(Gatherers.scan(() -> "", (acc, elem) -> acc + elem))
+                    .toList();
+
+                Comparator<String> comparator =
+                    incrementalParts.stream()
+                    .skip(1)
+                    .gather(Gatherers.fold(
+                                () -> Comparator.comparing((String s) -> s.startsWith(incrementalParts.get(0))),
+                                (comp, term) -> comp.thenComparing(s -> s.startsWith(term)))
+                           ).findFirst()
+                    .map(c -> c.thenComparing(Comparator.naturalOrder()))
+                    .orElseGet(() -> Comparator.naturalOrder());
+
+                List<TeamIdAndName> teams = client.teams().search(teamNameSearch).stream()
+                    .limit(10)
                     .map(team -> new TeamIdAndName(team.id(), team.name()))
-                    .forEach(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
+                    .sorted(Comparator.comparing(TeamIdAndName::id, comparator.reversed()))
+                    .toList();
+
+                teams.forEach(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
             }
         });
 
@@ -151,6 +171,25 @@ public interface Util {
                 client.teams().byUserId(userIdSearch).stream()
                     .map(team -> new TeamIdAndName(team.id(), team.name()))
                     .forEach(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
+            }
+        });
+
+
+        byTeamIdPanel.setLayout(new BoxLayout(byTeamIdPanel, BoxLayout.Y_AXIS));
+        JLabel sbtiLabel  = new JLabel("Search by Team Id");
+        JTextField sbtiField = new JTextField(10);
+        List.of(sbtiLabel, sbtiField).forEach(comp -> {
+            byTeamIdPanel.add(comp);
+            comp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        });
+
+        sbtiField.addActionListener(_ -> {
+            String teamIdSearch = sbtiField.getText();
+            if (! teamIdSearch.isBlank()) {
+                comboBox.removeAllItems();
+                client.teams().byTeamId(teamIdSearch)
+                    .map(team -> new TeamIdAndName(team.id(), team.name()))
+                    .ifPresent(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
             }
         });
 
