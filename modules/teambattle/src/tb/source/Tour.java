@@ -413,9 +413,11 @@ public class Tour implements Source {
 
     Optional<GameResult> resultOfMember(GameMeta gameMeta) {
         if (gameMeta.status().status() > Enums.Status.started.status()) {
-            record IdColor(String id, Enums.Color color) {}
-            var white = new IdColor(gameMeta.players().white().userId(), Enums.Color.white);
-            var black = new IdColor(gameMeta.players().black().userId(), Enums.Color.black);
+            record IdColor(String id, Enums.Color color, int rating, boolean provisional) {}
+            var whiteInfo = gameMeta.players().white();
+            var blackInfo = gameMeta.players().black();
+            var white = new IdColor(whiteInfo.userId(), Enums.Color.white, whiteInfo.rating(), whiteInfo.provisional());
+            var black = new IdColor(blackInfo.userId(), Enums.Color.black, blackInfo.rating(), blackInfo.provisional());
 
             Set<String> memberSet = currentMembers();
 
@@ -424,8 +426,8 @@ public class Tour implements Source {
                 var opponent = member.equals(white) ? black : white;
 
                 return Optional.of(switch(gameMeta.winner()) {
-                    case Some(var color) when color == member.color
-                        -> new Win(gameMeta.id(), member.id(), opponent.id());
+                    case Some(var color) when color == member.color -> new Win(gameMeta.id(), member.id(), opponent.id(),
+                            opponent.rating() - member.rating(), !(whiteInfo.provisional() || blackInfo.provisional()));
                     case Some(_) -> new Loss(gameMeta.id(), member.id(), opponent.id());
                     case Empty() -> new Draw(gameMeta.id(), member.id(), opponent.id());
                 });
@@ -552,7 +554,7 @@ public class Tour implements Source {
                                 new RepeatableAction(60*20, 60*20, standings(base.client(), arena, queue))
                                 )),
                         new Small(Stream.of(), Set.of()),
-                        List.of(new StreakAccumulator(), new AvengeAccumulator()) // resultAccumulators
+                        List.of(new StreakAccumulator(), new UpsetAccumulator(), new AvengeAccumulator()) // resultAccumulators
                         );
         };
     }
@@ -584,7 +586,7 @@ public class Tour implements Source {
 
         return new Running(data.withTickAccumulators(updatedTickAccumulators),
                 new Small(Stream.of(), Set.of()),
-                List.of(new FirstBloodAccumulator(), new StreakAccumulator(), new AvengeAccumulator())
+                List.of(new FirstBloodAccumulator(), new StreakAccumulator(), new UpsetAccumulator(), new AvengeAccumulator())
                 );
     }
 

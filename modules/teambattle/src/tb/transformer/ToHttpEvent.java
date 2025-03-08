@@ -31,6 +31,7 @@ public record ToHttpEvent(EventRenderer renderer) implements Transformer {
                  TourEnd _,
                  FirstBlood _,
                  Streak _,
+                 Upset _,
                  Avenge _ -> "<div>%s</div>".formatted(renderer.render(event));
 
             case Standings(Map<String, Integer> teams) -> """

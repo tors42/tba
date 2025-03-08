@@ -26,7 +26,7 @@ public sealed interface InternalEvent {
         String userId();
         String opponentId();
     }
-    record Win(String gameId, String userId, String opponentId) implements GameResult {}
+    record Win(String gameId, String userId, String opponentId, int ratingDiff, boolean anyProvisional) implements GameResult {}
     record Draw(String gameId, String userId, String opponentId) implements GameResult {}
     record Loss(String gameId, String userId, String opponentId) implements GameResult {}
 

@@ -14,7 +14,7 @@ public record AvengeAccumulator(Map<String, Set<String>> opponentVictims) implem
     @Override
     public Result<GameResult, TeamBattleEvent> accept(GameResult result) {
         return switch(result) {
-            case Win(_, String userId, String opponentId) -> {
+            case Win(_, String userId, String opponentId, _, _) -> {
                 var victims = opponentVictims.getOrDefault(opponentId, Set.of());
                 if (! victims.isEmpty()) {
                     var newMap = new HashMap<>(opponentVictims());

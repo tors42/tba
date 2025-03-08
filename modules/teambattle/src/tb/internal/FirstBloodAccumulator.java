@@ -11,7 +11,7 @@ public record FirstBloodAccumulator(boolean done) implements Accumulator<GameRes
 
     @Override
     public Result<GameResult, TeamBattleEvent> accept(GameResult result) {
-        if (! done && result instanceof Win(_, var userId, var opponentId)) {
+        if (! done && result instanceof Win(_, var userId, var opponentId, _, _)) {
             return new Value<>(new TeamBattleEvent.FirstBlood(userId, opponentId));
         }
         return new Self<>(this);
