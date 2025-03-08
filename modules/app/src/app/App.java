@@ -28,6 +28,22 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
         Client client = Client.load(prefs.node("chariot"));
 
         SwingUtilities.invokeLater(() -> App.of(config, client));
+
+        Thread.setDefaultUncaughtExceptionHandler((Thread thread, Throwable throwable) ->
+                System.err.println("""
+                    Ooops - Uncaught Exception
+                    How unfortunate...
+                    ==========================
+                    Thread.getName()      : %s
+                    Thread.threadId()     : %s
+                    Throwable.getClass()  : %s
+                    Throwable.getMessage(): %s
+                    ==========================
+                    """.formatted(
+                        thread.getName(),
+                        thread.threadId(),
+                        throwable.getClass(),
+                        throwable.getMessage())));
     }
 
 
