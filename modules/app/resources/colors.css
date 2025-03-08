@@ -11,7 +11,7 @@ span.foe {
     font-style: italic
 }
 
-.firstblood, .tourend {
+.firstblood, .tourend, .upset, .phoenix {
     background-color: #ffdddd;
     border-left: 6px solid #f44336;
 }
