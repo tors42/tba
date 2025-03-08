@@ -24,6 +24,7 @@ class Test {
                 new Streak("User1", 7),
                 new Streak("User1", 8),
                 new Upset("User1", "Foe1"),
+                new Phoenix("User1", "Foe1"),
                 new Avenge("User1", List.of("User1"), "Foe1"),
                 new Avenge("User1", List.of("User2"), "Foe1"),
                 new Avenge("User1", List.of("User2", "User3"), "Foe1"),

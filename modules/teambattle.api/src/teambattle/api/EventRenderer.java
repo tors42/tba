@@ -50,6 +50,7 @@ public sealed interface EventRenderer {
                 case FirstBlood(var member, var foe)   -> MessageFormat.format(bundle.getString("firstblood"), member, foe);
                 case Streak(var member, int winsInRow) -> MessageFormat.format(bundle.getString("streak"), member, winsInRow);
                 case Upset(var member, var foe) -> MessageFormat.format(bundle.getString("upset"), member, foe);
+                case Phoenix(var member, var foe) -> MessageFormat.format(bundle.getString("phoenix"), member, foe);
                 case Avenge(var member, var avenged, var foe) -> MessageFormat.format(bundle.getString("avenge"), member, foe,
                     groupOf(avenged.stream().filter(m -> !m.equals(member)).toList(), () -> bundle.getString("and")),
                     (Integer) (avenged.stream().filter(m -> !m.equals(member)).findAny().isPresent() ? 1: 0),
@@ -76,6 +77,7 @@ public sealed interface EventRenderer {
             case FirstBlood(var member, var foe)   -> new FirstBlood(memberReplacer.apply(member), foeReplacer.apply(foe));
             case Streak(var member, var winsInRow) -> new Streak(memberReplacer.apply(member), winsInRow);
             case Upset(var member, var foe) -> new Upset(memberReplacer.apply(member), foeReplacer.apply(foe));
+            case Phoenix(var member, var foe) -> new Phoenix(memberReplacer.apply(member), foeReplacer.apply(foe));
             case Avenge(var member, List<String> avenged, var foe)
                 -> new Avenge(memberReplacer.apply(member), avenged.stream().map(memberReplacer).toList(), foeReplacer.apply(foe));
             case Standings standings -> standings;
