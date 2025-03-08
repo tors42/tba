@@ -1,11 +1,9 @@
-package tb.internal;
+package teambattle.internal;
 
 import module java.base;
 import module teambattle.api;
 
 import tba.api.Event;
-import tba.api.TextEvent;
-import tb.transformer.ToTextEvent;
 
 import teambattle.api.TeamBattleEvent.*;
 
@@ -47,26 +45,24 @@ class Test {
                 new TourEnd());
 
 
-        EventRenderer defaultEventRenderer = EventRenderer.of();
-        EventRenderer svEventRenderer = EventRenderer.ofLocale(Locale.of("sv"));
-        EventRenderer frEventRenderer = EventRenderer.ofLocale(Locale.of("fr"));
 
+        record Named(String name, EventRenderer renderer) {}
+        List<Named> namedRenderers = List.of(
+                new Named("--", EventRenderer.of()),
+                new Named("sv", EventRenderer.ofLocale(Locale.of("sv"))),
+                new Named("fr", EventRenderer.ofLocale(Locale.of("fr")))
+                );
 
-        var defaultLocaleRenderer = new ToTextEvent(defaultEventRenderer);
-        var swedishRenderer = new ToTextEvent(svEventRenderer);
-        var frenchRenderer = new ToTextEvent(frEventRenderer);
-
-        List<ToTextEvent> renderers = List.of(defaultLocaleRenderer, swedishRenderer, frenchRenderer);
-
-        for (var renderer : renderers) {
-            for (var event : events) {
-                Event rendered = renderer.transform(event);
-                if (rendered instanceof TextEvent(String message)) {
-                    System.out.println(message);
-                } else {
-                    System.out.println("Failed to render, " + rendered);
+        events.forEach(event -> {
+            System.out.format("%s:%n", event.getClass().getSimpleName());
+            namedRenderers.forEach(named -> {
+                switch(event) {
+                    case Standings _ -> System.out.format("%s:%n%s", named.name(), named.renderer().render(event).indent(3));
+                    default          -> System.out.format("%s: %s", named.name(), named.renderer().render(event));
                 }
-            }
-        }
+                System.out.println();
+            });
+            System.out.println();
+        });
     }
 }
