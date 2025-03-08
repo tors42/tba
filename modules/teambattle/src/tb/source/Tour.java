@@ -554,7 +554,7 @@ public class Tour implements Source {
                                 new RepeatableAction(60*20, 60*20, standings(base.client(), arena, queue))
                                 )),
                         new Small(Stream.of(), Set.of()),
-                        List.of(new StreakAccumulator(), new UpsetAccumulator(), new AvengeAccumulator()) // resultAccumulators
+                        List.of(new StreakAccumulator(), new UpsetAccumulator(), new PhoenixAccumulator(), new AvengeAccumulator())
                         );
         };
     }
@@ -586,7 +586,7 @@ public class Tour implements Source {
 
         return new Running(data.withTickAccumulators(updatedTickAccumulators),
                 new Small(Stream.of(), Set.of()),
-                List.of(new FirstBloodAccumulator(), new StreakAccumulator(), new UpsetAccumulator(), new AvengeAccumulator())
+                List.of(new FirstBloodAccumulator(), new StreakAccumulator(), new UpsetAccumulator(), new PhoenixAccumulator(), new AvengeAccumulator())
                 );
     }
 
