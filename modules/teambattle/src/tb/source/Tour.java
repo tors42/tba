@@ -427,7 +427,7 @@ public class Tour implements Source {
 
                 return Optional.of(switch(gameMeta.winner()) {
                     case Some(var color) when color == member.color -> new Win(gameMeta.id(), member.id(), opponent.id(),
-                            opponent.rating() - member.rating(), !(whiteInfo.provisional() || blackInfo.provisional()));
+                            opponent.rating() - member.rating(), whiteInfo.provisional() || blackInfo.provisional());
                     case Some(_) -> new Loss(gameMeta.id(), member.id(), opponent.id());
                     case Empty() -> new Draw(gameMeta.id(), member.id(), opponent.id());
                 });
