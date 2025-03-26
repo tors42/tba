@@ -166,22 +166,23 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
                 basePanel.add(panel, BorderLayout.CENTER);
 
+                if (! (client.teams().byTeamId(id).orElse(null) instanceof Team team)) return;
 
-                if (client.teams().byTeamId(id).orElse(null) instanceof Team team
-                    && client.teams().arenaByTeamId(id, 1000).stream()
-                        .takeWhile(arena -> arena.tourInfo().status() != TourInfo.Status.finished)
+                Stream.concat(
+                    client.teams().arenaByTeamId(id, p -> p.statusStarted()).stream()
+                        .filter(arena -> arena.teamBattle().isPresent())
+                        .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
+                        .map(arena -> new Tournament(arena.id(), arena.tourInfo().name())),
+                    client.teams().arenaByTeamId(id, p -> p.statusCreated().max(1000)).stream()
                         .filter(arena -> arena.teamBattle().isPresent())
                         .filter(arena -> arena.tourInfo().startsAt().isBefore(ZonedDateTime.now().plusDays(1)))
                         .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
-                        .map(arena -> new Tournament(arena.id(), arena.tourInfo().name()))
-                        .toList() instanceof List<Tournament> tournaments) {
-
-                    tournaments.forEach(tournament -> tourComp.field().addItem(tournament));
-
-                    if (! tournaments.isEmpty()) {
-                        startButton.setEnabled(true);
-                        startAction.set(callback -> {
-                            return switch (tourComp.field().getSelectedIndex()) {
+                        .map(arena -> new Tournament(arena.id(), arena.tourInfo().name())))
+                    .forEach(tournament -> {
+                        tourComp.field().addItem(tournament);
+                        if (! startButton.isEnabled()) {
+                            startButton.setEnabled(true);
+                            startAction.set(callback -> switch (tourComp.field().getSelectedIndex()) {
                                 case int index when index > -1 -> {
                                     Tournament selectedTournament = tourComp.field().getItemAt(index);
                                     yield switch (client.tournaments().arenaById(selectedTournament.id())) {
@@ -192,14 +193,10 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                                         });
                                     };
                                 }
-                                default -> Thread.ofPlatform().start(() -> {
-                                    System.out.println("No Team Battle selected");
-                                    callback.run();
-                                });
-                            };
-                        });
-                    }
-                }
+                                default -> Thread.ofPlatform().start(() ->  callback.run());
+                            });
+                        }
+                    });
             }
 
             case AppConfig.SelectedTeam.Replay() -> {
