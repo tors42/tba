@@ -26,7 +26,7 @@ void main(String[] args) throws Exception {
 
     if (! Files.exists(chariot))
         Files.copy(URI.create(
-                    "https://repo1.maven.org/maven2/io/github/tors42/chariot/0.1.14/chariot-0.1.14.jar"
+                    "https://repo1.maven.org/maven2/io/github/tors42/chariot/0.1.15/chariot-0.1.15.jar"
                     ).toURL().openStream(), chariot);
 
     List<String> modules = List.of(
