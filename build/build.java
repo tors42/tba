@@ -16,6 +16,7 @@ void main(String[] args) throws Exception {
     Path libDir = Path.of("lib");
     Path modulesSrc = Path.of("modules");
     Path modulesOut = outDir.resolve("modules");
+    Path jars = outDir.resolve("jars");
     Path chariot = libDir.resolve("chariot.jar");
     Path metaInf = outDir.resolve("META-INF");
 
@@ -48,12 +49,12 @@ void main(String[] args) throws Exception {
                 "--module-path", libDir,
                 "--module-source-path", modulesSrc.resolve("*", "src"),
                 "--module", module,
-                "-d", outDir.resolve(module).resolve("classes")
+                "-d", modulesOut
            );
 
         Path resourcesDir = switch(modulesSrc.resolve(module).resolve("resources")) {
             case Path path when Files.exists(path) -> path;
-            case Path _ -> Files.createDirectories(outDir.resolve(module).resolve("resources"));
+            case Path _ -> Files.createDirectories(modulesOut.resolve(module).resolve("resources"));
         };
 
         run(jar,
@@ -61,19 +62,24 @@ void main(String[] args) throws Exception {
                 "--date", timestamp,
                 "--module-version", version,
                 "--no-manifest",
-                "--file", modulesOut.resolve(filenamePrefix + ".jar"),
+                "--file", jars.resolve(filenamePrefix + ".jar"),
                 "-C", outDir, "META-INF",
                 "-C", resourcesDir, ".",
-                "-C", outDir.resolve(module).resolve("classes").resolve(module), "."
+                "-C", modulesOut.resolve(module), "."
            );
     }
 
-    List<Path> modulePath = List.of(
-            jmodsPath,
-            modulesOut, libDir);
 
-    Path output = outDir.resolve("runtime").resolve(runtime);
+    createRuntime(
+            jlink,
+            List.of(jmodsPath, jars, libDir),
+            outDir.resolve("runtime").resolve(runtime),
+            modules,
+            "tba=app/app.App");
 
+}
+
+void createRuntime(ToolProvider jlink, List<Path> modulePath, Path output, List<String> modules, String launcher) {
     run(jlink,
             "--add-options", " --enable-preview",
             "--compress", "zip-9",
@@ -81,10 +87,9 @@ void main(String[] args) throws Exception {
             "--no-header-files",
             "--module-path", String.join(File.pathSeparator, modulePath.stream().map(Path::toString).toList()),
             "--add-modules", String.join(",", modules),
-            "--launcher", "tba" + "=" + "app/app.App",
+            "--launcher", launcher,
             "--output", output
-           );
-
+       );
 }
 
 void del(Path dir) {
