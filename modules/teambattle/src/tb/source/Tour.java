@@ -309,10 +309,10 @@ public class Tour implements Source {
                                     }
                                 };
 
-                                yield running.withMonitor(updatedMonitor).withMembers(new Members.Some(Set.copyOf(members)));
+                                yield running.withMonitor(updatedMonitor);
                             }
 
-                            default -> state.withMembers(new Members.Some(Set.copyOf(members)));
+                            default -> nextState;
                         };
                     }
 
