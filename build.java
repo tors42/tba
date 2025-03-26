@@ -44,7 +44,7 @@ void main(String[] args) throws Exception {
 
         run(javac,
                 "--enable-preview",
-                "--release", "23",
+                "--release", "24",
                 "--module-path", libDir,
                 "--module-source-path", modulesSrc.resolve("*", "src"),
                 "--module", module,
