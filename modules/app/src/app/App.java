@@ -129,10 +129,11 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                 JPanel panel = new JPanel();
                 panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
-                List.of((JComponent)Box.createVerticalGlue(), new JLabel("No Team Selected"), buttonPickTeam, (JComponent)Box.createVerticalGlue()).forEach(comp -> {
-                    panel.add(comp);
-                    comp.setAlignmentX(Component.CENTER_ALIGNMENT);
-                });
+                List.of((JComponent)Box.createVerticalGlue(), new JLabel("No Team Selected"), buttonPickTeam, (JComponent)Box.createVerticalGlue())
+                    .forEach(comp -> {
+                        panel.add(comp);
+                        comp.setAlignmentX(Component.CENTER_ALIGNMENT);
+                    });
 
                 basePanel.add(panel, BorderLayout.CENTER);
             }
@@ -214,23 +215,24 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
                 panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
-                List.of((JComponent)Box.createVerticalGlue(), new JLabel("Simulating a Team Battle With Test Data"), (JComponent)Box.createVerticalGlue()).forEach(comp -> {
-                    panel.add(comp);
-                    comp.setAlignmentX(Component.CENTER_ALIGNMENT);
-                });
+                List.of((JComponent)Box.createVerticalGlue(), new JLabel("Simulating a Team Battle With Test Data"), (JComponent)Box.createVerticalGlue())
+                    .forEach(comp -> {
+                        panel.add(comp);
+                        comp.setAlignmentX(Component.CENTER_ALIGNMENT);
+                    });
 
                 JPanel bp = new JPanel();
                 bp.setLayout(new BoxLayout(bp, BoxLayout.X_AXIS));
 
-                List.of((JComponent)Box.createHorizontalGlue(), buttonPickTeam).forEach(comp -> {
-                    bp.add(comp);
-                    comp.setAlignmentX(Component.RIGHT_ALIGNMENT);
-                });
+                List.of((JComponent)Box.createHorizontalGlue(), buttonPickTeam)
+                    .forEach(comp -> {
+                        bp.add(comp);
+                        comp.setAlignmentX(Component.RIGHT_ALIGNMENT);
+                    });
+
                 buttonPickTeam.setFocusable(false);
 
                 outer.add(bp, BorderLayout.SOUTH);
-
-
                 basePanel.add(outer, BorderLayout.CENTER);
             }
         };
