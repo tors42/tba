@@ -63,10 +63,10 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
     void relayoutComponents() {
         frame.setVisible(false);
+        frame.setMinimumSize(new Dimension(400, 200));
         frame.getContentPane().removeAll();
 
         JPanel basePanel = new JPanel();
-        basePanel.setPreferredSize(new Dimension(400, 200));
         basePanel.setLayout(new BorderLayout());
         frame.getContentPane().add(basePanel);
 
@@ -129,7 +129,9 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                 JPanel panel = new JPanel();
                 panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
-                List.of((JComponent)Box.createVerticalGlue(), new JLabel("No Team Selected"), buttonPickTeam, (JComponent)Box.createVerticalGlue())
+                buttonPickTeam.setText("No Team Selected");
+
+                List.of((JComponent)Box.createVerticalGlue(), buttonPickTeam, (JComponent)Box.createVerticalGlue())
                     .forEach(comp -> {
                         panel.add(comp);
                         comp.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -140,64 +142,66 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
             case AppConfig.SelectedTeam.TeamIdAndName(String id, String name) -> {
                 record Tournament(String id, String name) {}
-                var teamComp = LabelAndField.of("Team:", new JLabel(name));
+                var teamComp = LabelAndField.of("Team:", buttonPickTeam);
                 var tourComp = LabelAndField.of("Tournament:", new JComboBox<Tournament>());
+                var progressComp = LabelAndField.of("Loading...", new JProgressBar());
+
+                teamComp.field().setText(name);
+                teamComp.field().setFocusable(false);
 
                 tourComp.field().setRenderer((_, value, _, _, _) -> new JLabel(switch(value) {
                     case null -> "<No Team Battles today>";
                     case Tournament(_, String tourName) -> tourName;
                     }));
+                tourComp.field().setPrototypeDisplayValue(new Tournament("", "T".repeat(30)));
 
-                var teamPanel = Util.pairedComponents(List.of(teamComp, tourComp));
+                progressComp.field().setIndeterminate(true);
+                progressComp.field().putClientProperty("JProgressBar.style", "circular");
+
+                JPanel teamPanel = Util.pairedComponents(List.of(teamComp, tourComp, progressComp));
 
                 JPanel panel = new JPanel();
                 panel.setLayout(new BorderLayout());
+                panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
                 panel.add(teamPanel, BorderLayout.CENTER);
-
-                JPanel bp = new JPanel();
-                bp.setLayout(new BoxLayout(bp, BoxLayout.X_AXIS));
-
-                bp.add(buttonPickTeam);
-                buttonPickTeam.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-                buttonPickTeam.setText("Switch Team");
-                buttonPickTeam.setFocusable(false);
-
-                panel.add(bp, BorderLayout.SOUTH);
 
                 basePanel.add(panel, BorderLayout.CENTER);
 
                 if (! (client.teams().byTeamId(id).orElse(null) instanceof Team team)) return;
 
-                Stream.concat(
-                    client.teams().arenaByTeamId(id, p -> p.statusStarted()).stream()
-                        .filter(arena -> arena.teamBattle().isPresent())
-                        .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
-                        .map(arena -> new Tournament(arena.id(), arena.tourInfo().name())),
-                    client.teams().arenaByTeamId(id, p -> p.statusCreated().max(1000)).stream()
-                        .filter(arena -> arena.teamBattle().isPresent())
-                        .filter(arena -> arena.tourInfo().startsAt().isBefore(ZonedDateTime.now().plusDays(1)))
-                        .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
-                        .map(arena -> new Tournament(arena.id(), arena.tourInfo().name())))
-                    .forEach(tournament -> {
-                        tourComp.field().addItem(tournament);
-                        if (! startButton.isEnabled()) {
-                            startButton.setEnabled(true);
-                            startAction.set(callback -> switch (tourComp.field().getSelectedIndex()) {
-                                case int index when index > -1 -> {
-                                    Tournament selectedTournament = tourComp.field().getItemAt(index);
-                                    yield switch (client.tournaments().arenaById(selectedTournament.id())) {
-                                        case Entry(Arena arena) -> startLiveThread(team, arena, callback);
-                                        case NoEntry<Arena> nope -> Thread.ofPlatform().start(() -> {
-                                            System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), nope));
-                                            callback.run();
-                                        });
+                Thread.ofPlatform().start(() -> {
+                    Stream<Tournament> stream = Stream.concat(
+                        tourStream(client.teams().arenaByTeamId(id, p -> p.statusStarted()).stream(), Tournament::new),
+                        tourStream(client.teams().arenaByTeamId(id, p -> p.statusCreated().max(1000)).stream(), Tournament::new));
+
+                    try {
+                        stream.forEach(tournament -> {
+                            tourComp.field().addItem(tournament);
+                            if (! startButton.isEnabled()) {
+                                startButton.setEnabled(true);
+                                startAction.set(callback -> {
+                                    Thread t = switch (tourComp.field().getSelectedIndex()) {
+                                        case int index when index > -1 -> {
+                                            Tournament selectedTournament = tourComp.field().getItemAt(index);
+                                            yield switch (client.tournaments().arenaById(selectedTournament.id())) {
+                                                case Entry(Arena arena) -> startLiveThread(team, arena, callback);
+                                                case NoEntry<Arena> nope -> Thread.ofPlatform().start(() -> {
+                                                    System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), nope));
+                                                    callback.run();
+                                                });
+                                            };
+                                        }
+                                        default -> Thread.ofPlatform().start(() ->  callback.run());
                                     };
-                                }
-                                default -> Thread.ofPlatform().start(() ->  callback.run());
-                            });
-                        }
-                    });
+                                    stream.close();
+                                    return t;
+                                });
+                            }
+                        });
+                    } catch (Exception ex) {}
+                    progressComp.label().setVisible(false);
+                    progressComp.field().setVisible(false);
+                });
             }
 
             case AppConfig.SelectedTeam.Replay() -> {
@@ -215,24 +219,16 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
                 panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 
-                List.of((JComponent)Box.createVerticalGlue(), new JLabel("Simulating a Team Battle With Test Data"), (JComponent)Box.createVerticalGlue())
+                buttonPickTeam.setText("Simulating a Team Battle With Test Data");
+
+                List.of((JComponent)Box.createVerticalGlue(), buttonPickTeam, (JComponent)Box.createVerticalGlue())
                     .forEach(comp -> {
                         panel.add(comp);
                         comp.setAlignmentX(Component.CENTER_ALIGNMENT);
                     });
 
-                JPanel bp = new JPanel();
-                bp.setLayout(new BoxLayout(bp, BoxLayout.X_AXIS));
-
-                List.of((JComponent)Box.createHorizontalGlue(), buttonPickTeam)
-                    .forEach(comp -> {
-                        bp.add(comp);
-                        comp.setAlignmentX(Component.RIGHT_ALIGNMENT);
-                    });
-
                 buttonPickTeam.setFocusable(false);
 
-                outer.add(bp, BorderLayout.SOUTH);
                 basePanel.add(outer, BorderLayout.CENTER);
             }
         };
@@ -242,6 +238,13 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
         frame.setVisible(true);
     }
 
+    private <T> Stream<T> tourStream(Stream<ArenaLight> arenaStream, BiFunction<String, String, T> constructor) {
+        return arenaStream.filter(arena ->
+                arena.teamBattle().isPresent() &&
+                arena.tourInfo().startsAt().isBefore(ZonedDateTime.now().plusDays(1)))
+            .sorted(Comparator.comparing(arena -> arena.tourInfo().startsAt()))
+            .map(arena -> constructor.apply(arena.id(), arena.tourInfo().name()));
+    }
 
     private JComponent initBrowserComponent() {
         if (Desktop.isDesktopSupported()
