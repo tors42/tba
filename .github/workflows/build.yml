@@ -68,7 +68,7 @@ jobs:
           tstamp="$(git log -1 --format=%aI)"
           runtime="${{ matrix.os }}-${{ matrix.arch }}"
           jmods="$(dirname $(find ${{ runner.temp }}/targetjdk -name jmods))/jmods"
-          cmd="$java --enable-preview build.java $version $tstamp $runtime $jmods"
+          cmd="$java --enable-preview build/build.java $version $tstamp $runtime $jmods"
           $java -Xinternalversion
           echo $cmd
           $cmd
