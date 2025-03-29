@@ -223,7 +223,9 @@ public class Tour implements Source {
 
                         if (! (currentState instanceof WithData state)) yield currentState;
 
-                        WithData nextState = state.withMembers(new Members.Some(Set.copyOf(members)));
+                        WithData nextState = state.withMembers(new Members.Some(
+                                    Stream.of(state.data().members().members(), members)
+                                        .flatMap(Set::stream).collect(Collectors.toSet())));
 
                         List<String> newMembers = switch (state.data().members()) {
                             case Members.Some(var previousMembers) -> members.stream()
@@ -468,6 +470,12 @@ public class Tour implements Source {
     }
 
     sealed interface Members {
+        default Set<String> members() {
+            return switch(this) {
+                case Unset() -> Set.of();
+                case Some(var set) -> set;
+            };
+        }
         record Unset() implements Members {}
         record Some(Set<String> members) implements Members {}
     }
