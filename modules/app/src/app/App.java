@@ -29,21 +29,28 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
         SwingUtilities.invokeLater(() -> App.of(config, client));
 
-        Thread.setDefaultUncaughtExceptionHandler((Thread thread, Throwable throwable) ->
+        Thread.setDefaultUncaughtExceptionHandler((Thread thread, Throwable throwable) -> {
+                var sw = new StringWriter();
+                var pw = new PrintWriter(sw);
+                throwable.printStackTrace(pw);
                 System.err.println("""
                     Ooops - Uncaught Exception
                     How unfortunate...
                     ==========================
                     Thread.getName()      : %s
                     Thread.threadId()     : %s
-                    Throwable.getClass()  : %s
                     Throwable.getMessage(): %s
+                    ==========================
+                    Stack Trace:
+                    %s
                     ==========================
                     """.formatted(
                         thread.getName(),
                         thread.threadId(),
-                        throwable.getClass(),
-                        throwable.getMessage())));
+                        throwable.getMessage(),
+                        sw.toString()
+                        ));
+        });
     }
 
 
