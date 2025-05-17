@@ -4,11 +4,15 @@ import module java.base;
 import module java.desktop;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
 import javax.swing.GroupLayout;
 
 import app.AppConfig.SelectedTeam;
 import app.AppConfig.SelectedTeam.*;
 import chariot.Client;
+import chariot.model.Arena;
+import chariot.model.Some;
 
 public interface Util {
 
@@ -67,8 +71,9 @@ public interface Util {
         return button;
     }
 
+    record PickedTeam(AppConfig.SelectedTeam team, Optional<Arena> arena) {}
 
-    static AppConfig.SelectedTeam pickTeam(SelectedTeam current, JFrame frame, Client client) {
+    static PickedTeam pickTeam(PickedTeam current, JFrame frame, Client client) {
 
         JButton buttonOk = Util.createButtonForOptionPane("Ok");
         JButton buttonCancel = Util.createButtonForOptionPane("Cancel");
@@ -85,7 +90,7 @@ public interface Util {
             });
         });
 
-        if (current instanceof TeamIdAndName team) {
+        if (current.team() instanceof TeamIdAndName team) {
             comboBox.addItem(team);
         }
 
@@ -106,13 +111,14 @@ public interface Util {
         JPanel byTeamNamePanel = new JPanel();
         JPanel byUserIdPanel = new JPanel();
         JPanel byTeamIdPanel = new JPanel();
+        JPanel byArenaIdPanel = new JPanel();
         JPanel testPanel = new JPanel();
 
-        if (current instanceof Replay) {
+        if (current.team() instanceof Replay) {
             testPanel.setVisible(false);
         }
 
-        List.of(byTeamNamePanel, byUserIdPanel, byTeamIdPanel, testPanel).forEach(comp -> {
+        List.of(byTeamNamePanel, byUserIdPanel, byTeamIdPanel, byArenaIdPanel, testPanel).forEach(comp -> {
             comp.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
             centerPanels.add(comp);
             comp.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -193,6 +199,39 @@ public interface Util {
             }
         });
 
+
+        byArenaIdPanel.setLayout(new BoxLayout(byArenaIdPanel, BoxLayout.Y_AXIS));
+        JLabel sbaiLabel  = new JLabel("Search by Arena Id");
+        JTextField sbaiField = new JTextField(10);
+        List.of(sbaiLabel, sbaiField).forEach(comp -> {
+            byArenaIdPanel.add(comp);
+            comp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        });
+
+        AtomicReference<Optional<Arena>> arenaReference = new AtomicReference<>(Optional.empty());
+        sbaiField.addActionListener(_ -> {
+            String arenaIdSearch = sbaiField.getText();
+            if (! arenaIdSearch.isBlank()) {
+
+                if (client.tournaments().arenaById(arenaIdSearch).orElse(null) instanceof Arena arena
+                    && arena.teamBattle() instanceof Some(var teamBattle)) {
+                    arenaReference.set(Optional.of(arena));
+                    comboBox.removeAllItems();
+                    var teams = teamBattle.teams().stream()
+                        .map(team -> new TeamIdAndName(team.id(), team.name()))
+                        .toList();
+
+                    SwingUtilities.invokeLater(() -> {
+                        teams.forEach(comboBox::addItem);
+                        if (teams.contains(current.team())) {
+                            comboBox.setSelectedItem(current.team());
+                        }
+                    });
+                }
+            }
+        });
+
+
         testPanel.setLayout(new BoxLayout(testPanel, BoxLayout.Y_AXIS));
         JLabel testLabel  = new JLabel("Run with Test Data");
         JButton testButton = new JButton("Test Data");
@@ -224,7 +263,7 @@ public interface Util {
         if (choice == JOptionPane.OK_OPTION) {
             int index = comboBox.getSelectedIndex();
             if (index > -1) {
-                return comboBox.getItemAt(index);
+                return new PickedTeam(comboBox.getItemAt(index), arenaReference.get());
             }
         }
 

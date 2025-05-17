@@ -5,6 +5,8 @@ import module tba.api;
 import module chariot;
 
 import java.util.List;
+import java.util.Optional;
+
 import chariot.model.Arena;
 
 import teambattle.http.TeamBattleHttpSinkProvider;
@@ -64,11 +66,11 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
         frame.setJMenuBar(menubar);
 
         App app = new App(config, client, pipelines, frame);
-        app.relayoutComponents();
+        app.relayoutComponents(Optional.empty());
         return app;
     }
 
-    void relayoutComponents() {
+    void relayoutComponents(Optional<Arena> preSelectedArena) {
         frame.setVisible(false);
         frame.setMinimumSize(new Dimension(400, 200));
         frame.getContentPane().removeAll();
@@ -121,12 +123,13 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
         JButton buttonPickTeam = new JButton("Pick a Team");
         buttonPickTeam.addActionListener(_ -> {
-            var current = config.selectedTeam();
-            AppConfig.SelectedTeam pickedTeam = Util.pickTeam(current, frame, client);
+            var current = new Util.PickedTeam(config.selectedTeam(), preSelectedArena);
 
-            if (!Objects.equals(pickedTeam, current)) {
-                config.storeSelectedTeam(pickedTeam);
-                relayoutComponents();
+            var picked = Util.pickTeam(current, frame, client);
+
+            if (!Objects.equals(picked, current)) {
+                config.storeSelectedTeam(picked.team());
+                relayoutComponents(picked.arena());
             }
         });
 
@@ -177,9 +180,12 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                 if (! (client.teams().byTeamId(id).orElse(null) instanceof Team team)) return;
 
                 Thread.ofPlatform().start(() -> {
-                    Stream<Tournament> stream = Stream.concat(
-                        tourStream(client.teams().arenaByTeamId(id, p -> p.statusStarted()).stream(), Tournament::new),
-                        tourStream(client.teams().arenaByTeamId(id, p -> p.statusCreated().max(1000)).stream(), Tournament::new));
+
+                    Stream<Tournament> stream = preSelectedArena
+                        .map(arena -> Stream.of(new Tournament(arena.id(), arena.tourInfo().name())))
+                        .orElseGet(() -> Stream.concat(
+                            tourStream(client.teams().arenaByTeamId(id, p -> p.statusStarted()).stream(), Tournament::new),
+                            tourStream(client.teams().arenaByTeamId(id, p -> p.statusCreated().max(1000)).stream(), Tournament::new)));
 
                     try {
                         stream.forEach(tournament -> {
@@ -187,7 +193,9 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                             if (! startButton.isEnabled()) {
                                 startButton.setEnabled(true);
                                 startAction.set(callback -> {
-                                    Thread t = switch (tourComp.field().getSelectedIndex()) {
+                                    Thread t = preSelectedArena
+                                        .map(arena -> startLiveThread(team, arena, callback))
+                                        .orElseGet(() -> switch (tourComp.field().getSelectedIndex()) {
                                         case int index when index > -1 -> {
                                             Tournament selectedTournament = tourComp.field().getItemAt(index);
                                             yield switch (client.tournaments().arenaById(selectedTournament.id())) {
@@ -199,7 +207,7 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                                             };
                                         }
                                         default -> Thread.ofPlatform().start(() ->  callback.run());
-                                    };
+                                    });
                                     stream.close();
                                     return t;
                                 });
