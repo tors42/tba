@@ -208,7 +208,7 @@ public class Tour implements Source {
                                 System.out.println("Members with ongoing games:\n%s".formatted(
                                             monitored.stream().sorted().toList()));
                                 System.out.println("Members without games:\n%s".formatted(
-                                            currentMembers().stream()
+                                            currentMembers().members().stream()
                                                 .filter(Predicate.not(monitored::contains))
                                                 .sorted().toList()));
                             }
@@ -223,12 +223,29 @@ public class Tour implements Source {
 
                         if (! (currentState instanceof WithData state)) yield currentState;
 
-                        WithData nextState = state.withMembers(new Members.Some(
-                                    Stream.of(state.data().members().members(), members)
-                                        .flatMap(Set::stream).collect(Collectors.toSet())));
+
+                        var mergedMembers = switch(state.data().members().members().equals(members)) {
+                            case true -> members;
+                            case false -> {
+                                var updatedMembers = new HashSet<>(state.data().members().members());
+                                updatedMembers.addAll(members);
+                                yield Collections.unmodifiableSet(updatedMembers);
+                            }
+                        };
+
+                        var mergedAllParticipants = switch(state.data().members().everyone().equals(allParticipants)) {
+                            case true -> allParticipants;
+                            case false -> {
+                                var updatedParticipants = new HashSet<>(state.data().members().everyone());
+                                updatedParticipants.addAll(allParticipants);
+                                yield Collections.unmodifiableSet(updatedParticipants);
+                            }
+                        };
+
+                        WithData nextState = state.withMembers(new Members.Some(mergedMembers, mergedAllParticipants));
 
                         List<String> newMembers = switch (state.data().members()) {
-                            case Members.Some(var previousMembers) -> members.stream()
+                            case Members.Some(var previousMembers, _) -> members.stream()
                                 .filter(Predicate.not(previousMembers::contains))
                                 .sorted()
                                 .toList();
@@ -392,14 +409,12 @@ public class Tour implements Source {
         done = true;
     }
 
-    Set<String> currentMembers() {
-        return switch(currentState) {
-            case WithData withData -> switch (withData.data().members()) {
-                case Members.Some(Set<String> members) -> members;
-                case Members.Unset() -> Set.of();
-            };
-            default -> Set.of();
-        };
+    Members.Some currentMembers() {
+        if (currentState instanceof WithData withData &&
+            withData.data().members() instanceof Members.Some someMembers) {
+            return someMembers;
+            }
+        return new Members.Some(Set.of(), Set.of());
     }
 
     String nameRenderer(String id) {
@@ -414,14 +429,33 @@ public class Tour implements Source {
     }
 
     Optional<GameResult> resultOfMember(GameMeta gameMeta) {
-        if (gameMeta.status().status() > Enums.Status.started.status()) {
+
+        // Typically game results will be from games in the team battle.
+        // But players could play games outside of the team battle!
+
+        // To be 100% certain the game result is from the monitored team battle, one could make an additional API request,
+        // `client.games().byGameId(id).tournament().ifPresent( (String tourId) -> tourId.equals(teamBattle.id()))`,
+        // but maybe it is good enough to look at some indicators available:
+        // - Game rated/casual is same as team battle
+        // - Game time control is same as team battle
+        // - Game participants are both in the team battle
+
+        Arena arena = currentState.base().arena();
+        var whiteInfo = gameMeta.players().white();
+        var blackInfo = gameMeta.players().black();
+
+        if (gameMeta.status().status() > Enums.Status.started.status()
+
+            && gameMeta.rated() == arena.tourInfo().rated()
+            && gameMeta.timeControl().clock().equals(arena.tourInfo().clock())
+            && gameMeta.variant().equals(arena.tourInfo().variant())
+            && currentMembers().everyone().containsAll(Set.of(whiteInfo.userId(), blackInfo.userId()))) {
+
             record IdColor(String id, Enums.Color color, int rating, boolean provisional) {}
-            var whiteInfo = gameMeta.players().white();
-            var blackInfo = gameMeta.players().black();
             var white = new IdColor(whiteInfo.userId(), Enums.Color.white, whiteInfo.rating(), whiteInfo.provisional());
             var black = new IdColor(blackInfo.userId(), Enums.Color.black, blackInfo.rating(), blackInfo.provisional());
 
-            Set<String> memberSet = currentMembers();
+            Set<String> memberSet = currentMembers().members();
 
             if (memberSet.contains(white.id()) || memberSet.contains(black.id())) {
                 var member = memberSet.contains(white.id()) ? white : black;
@@ -473,11 +507,17 @@ public class Tour implements Source {
         default Set<String> members() {
             return switch(this) {
                 case Unset() -> Set.of();
-                case Some(var set) -> set;
+                case Some(var members, _) -> members;
+            };
+        }
+        default Set<String> everyone() {
+            return switch(this) {
+                case Unset() -> Set.of();
+                case Some(_ , var everyone) -> everyone;
             };
         }
         record Unset() implements Members {}
-        record Some(Set<String> members) implements Members {}
+        record Some(Set<String> members, Set<String> everyone) implements Members {}
     }
 
     record Data(Base base, Members members, List<Accumulator<Void, Runnable>> tickAccumulators) {
@@ -543,7 +583,7 @@ public class Tour implements Source {
 
             // Normal flow
             case ZonedDateTime now when now.isBefore(arena.tourInfo().startsAt())
-                -> new NotStarted(new Data(base, new Members.Some(Set.of()),
+                -> new NotStarted(new Data(base, new Members.Some(Set.of(), Set.of()),
                             List.of(
                                 new RepeatableAction(60,     arenaUpdate(base.client(), arena, queue)),
                                 new RepeatableAction(60, 60, members(base.client(), arena, base.team(), queue))
