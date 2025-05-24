@@ -20,7 +20,6 @@ public sealed interface InternalEvent {
         public Set<String> allParticipantIds() { return allParticipants.stream().map(ParticipantStatus::userId).collect(Collectors.toSet()); }
     }
 
-    record GameBegin(String id, String userId, String opponentId) implements InternalEvent {}
     sealed interface GameResult extends InternalEvent {
         String gameId();
         String userId();
