@@ -447,7 +447,8 @@ public class Tour implements Source {
         if (gameMeta.status().status() > Enums.Status.started.status()
 
             && gameMeta.rated() == arena.tourInfo().rated()
-            && gameMeta.timeControl().clock().equals(arena.tourInfo().clock())
+            && gameMeta.timeControl() instanceof RealTime rt
+            && rt.clock().equals(arena.tourInfo().clock())
             && gameMeta.variant().equals(arena.tourInfo().variant())
             && currentMembers().everyone().containsAll(Set.of(whiteInfo.userId(), blackInfo.userId()))) {
 
