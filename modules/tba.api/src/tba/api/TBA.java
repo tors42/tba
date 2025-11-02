@@ -137,12 +137,12 @@ public interface TBA {
 
     static void runPipelines(List<ResolvedPipeline> pipelines) {
 
-        try (var outerScope = new StructuredTaskScope<>()) {
+        try (var outerScope = StructuredTaskScope.open()) {
 
             for (ResolvedPipeline pipeline : pipelines) {
 
                 outerScope.fork(() -> {
-                    try (var innerScope = new StructuredTaskScope<>()) {
+                    try (var innerScope = StructuredTaskScope.open()) {
                         Stream<? extends Event> events = pipeline.source().events();
 
                         for (Transformer transformer : pipeline.transformers()) {

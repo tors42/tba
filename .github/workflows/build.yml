@@ -12,8 +12,8 @@ on:
 jobs:
   jlink:
     env:
-      JDK_VERSION: "24.0.2"
-      JDK_BASE_URL: "https://download.java.net/java/GA/jdk24.0.2/fdc5d0102fe0414db21410ad5834341f/12/GPL/"
+      JDK_VERSION: "25.0.1"
+      JDK_BASE_URL: "https://download.java.net/java/GA/jdk25.0.1/2fbf10d8c78e40bd87641c434705079d/8/GPL/"
       build_os: linux
       build_arch: x64
       build_pkg: tar.gz
