@@ -2,17 +2,15 @@ package app;
 
 import module java.base;
 import module java.desktop;
+import module chariot;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
-
 import javax.swing.GroupLayout;
+import chariot.model.Arena;
+import chariot.model.Some;
 
 import app.AppConfig.SelectedTeam;
 import app.AppConfig.SelectedTeam.*;
-import chariot.Client;
-import chariot.model.Arena;
-import chariot.model.Some;
 
 public interface Util {
 
@@ -109,7 +107,7 @@ public interface Util {
         });
 
         JPanel byTeamNamePanel = new JPanel();
-        JPanel byUserIdPanel = new JPanel();
+        JPanel byUserIdPanel = new JPanel(); // teams by userId changed to need auth
         JPanel byTeamIdPanel = new JPanel();
         JPanel byArenaIdPanel = new JPanel();
         JPanel testPanel = new JPanel();
@@ -119,6 +117,7 @@ public interface Util {
         }
 
         List.of(byTeamNamePanel, byUserIdPanel, byTeamIdPanel, byArenaIdPanel, testPanel).forEach(comp -> {
+            if (comp == byUserIdPanel && !(client instanceof ClientAuth)) return; // teams by userId changed to need auth
             comp.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
             centerPanels.add(comp);
             comp.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -162,23 +161,26 @@ public interface Util {
             }
         });
 
-        byUserIdPanel.setLayout(new BoxLayout(byUserIdPanel, BoxLayout.Y_AXIS));
-        JLabel sbuiLabel  = new JLabel("Search by User Id");
-        JTextField sbuiField = new JTextField(10);
-        List.of(sbuiLabel, sbuiField).forEach(comp -> {
-            byUserIdPanel.add(comp);
-            comp.setAlignmentX(Component.LEFT_ALIGNMENT);
-        });
+        // teams by userId changed to need auth
+        if (client instanceof ClientAuth auth) {
+            byUserIdPanel.setLayout(new BoxLayout(byUserIdPanel, BoxLayout.Y_AXIS));
+            JLabel sbuiLabel  = new JLabel("Search by User Id");
+            JTextField sbuiField = new JTextField(10);
+            List.of(sbuiLabel, sbuiField).forEach(comp -> {
+                byUserIdPanel.add(comp);
+                comp.setAlignmentX(Component.LEFT_ALIGNMENT);
+            });
 
-        sbuiField.addActionListener(_ -> {
-            String userIdSearch = sbuiField.getText();
-            if (! userIdSearch.isBlank()) {
-                comboBox.removeAllItems();
-                client.teams().byUserId(userIdSearch).stream()
-                    .map(team -> new TeamIdAndName(team.id(), team.name()))
-                    .forEach(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
-            }
-        });
+            sbuiField.addActionListener(_ -> {
+                String userIdSearch = sbuiField.getText();
+                if (! userIdSearch.isBlank()) {
+                    comboBox.removeAllItems();
+                    auth.teams().byUserId(userIdSearch).stream()
+                        .map(team -> new TeamIdAndName(team.id(), team.name()))
+                        .forEach(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
+                }
+            });
+        }
 
 
         byTeamIdPanel.setLayout(new BoxLayout(byTeamIdPanel, BoxLayout.Y_AXIS));
@@ -193,7 +195,7 @@ public interface Util {
             String teamIdSearch = sbtiField.getText();
             if (! teamIdSearch.isBlank()) {
                 comboBox.removeAllItems();
-                client.teams().byTeamId(teamIdSearch)
+                client.teams().byTeamId(teamIdSearch).maybe()
                     .map(team -> new TeamIdAndName(team.id(), team.name()))
                     .ifPresent(team -> SwingUtilities.invokeLater(() -> comboBox.addItem(team)));
             }
@@ -213,7 +215,7 @@ public interface Util {
             String arenaIdSearch = sbaiField.getText();
             if (! arenaIdSearch.isBlank()) {
 
-                if (client.tournaments().arenaById(arenaIdSearch).orElse(null) instanceof Arena arena
+                if (client.tournaments().arenaById(arenaIdSearch) instanceof Some(Arena arena)
                     && arena.teamBattle() instanceof Some(var teamBattle)) {
                     arenaReference.set(Optional.of(arena));
                     comboBox.removeAllItems();

@@ -25,7 +25,7 @@ public record TUISourceConfigProvider(UI ui) implements ConfigProvider {
         }
 
         var teamResult = client.teams().byTeamId(teamId);
-        if (! (teamResult instanceof Entry(Team team))) {
+        if (! (teamResult instanceof Some(Team team))) {
             ui.crudeMessage(teamResult + "\nFailed to find team, will be more helpful in future...");
             return Optional.empty();
         }
@@ -50,7 +50,7 @@ public record TUISourceConfigProvider(UI ui) implements ConfigProvider {
         Client client = Client.load(prefs.node("chariot"));
 
         var teamResult = client.teams().byTeamId(teamId);
-        if (! (teamResult instanceof Entry(Team team))) {
+        if (! (teamResult instanceof Some(Team team))) {
             ui.crudeMessage(teamResult + "\nFailed to find team, will be more helpful in future...");
             return Optional.empty();
         }
@@ -72,7 +72,7 @@ public record TUISourceConfigProvider(UI ui) implements ConfigProvider {
         Client client = Client.load(prefs.node("chariot"));
 
         var teamResult = client.teams().byTeamId(teamId);
-        if (! (teamResult instanceof Entry(Team team))) {
+        if (! (teamResult instanceof Some(Team team))) {
             ui.crudeMessage(teamResult + "\nFailed to find team! (non-interactive)");
             return Optional.empty();
         }
@@ -112,7 +112,7 @@ public record TUISourceConfigProvider(UI ui) implements ConfigProvider {
         if (size == 0) {
 
             if (arenaId.isPresent()) {
-                if (client.tournaments().arenaById(arenaId.get()) instanceof Entry(Arena arena)) {
+                if (client.tournaments().arenaById(arenaId.get()) instanceof Some(Arena arena)) {
                     if (arena.tourInfo().status() != TourInfo.Status.finished) {
                         return arena;
                     }
@@ -129,7 +129,7 @@ public record TUISourceConfigProvider(UI ui) implements ConfigProvider {
         if (size > 1) {
 
             if (arenaId.isPresent()) {
-                if (client.tournaments().arenaById(arenaId.get()) instanceof Entry(Arena arena)) {
+                if (client.tournaments().arenaById(arenaId.get()) instanceof Some(Arena arena)) {
                     if (arena.tourInfo().status() != TourInfo.Status.finished) {
                         return arena;
                     }
@@ -144,7 +144,7 @@ public record TUISourceConfigProvider(UI ui) implements ConfigProvider {
         }
 
         var arenaResult = client.tournaments().arenaById(nonFinishedTeamBattles.getFirst().id());
-        if (! (arenaResult instanceof Entry(Arena arena))) {
+        if (! (arenaResult instanceof Some(Arena arena))) {
             ui.crudeMessage(arenaResult + "\nFailed to lookup tournament by id");
             if (interactive) {
                 ui.crudeMessage("Will be more helpful in future, i.e try resolve the problem interactively");

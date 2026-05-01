@@ -420,8 +420,8 @@ public class Tour implements Source {
     String nameRenderer(String id) {
         try {
             User cachedUser = cache.computeIfAbsent(id, _ -> switch(currentState.base().client().users().byId(id)) {
-                case Entry(var user) -> user;
-                default -> null;
+                case Some(var user) -> user;
+                case Fail(int status, var msg) -> { IO.println("%d - %s".formatted(status, msg));  yield null; }
             });
             return cachedUser == null ? id : cachedUser.name();
         } catch (Exception e) { e.printStackTrace(); }
@@ -682,7 +682,7 @@ public class Tour implements Source {
     }
 
     static Runnable arenaUpdate(Client client, Arena arena, Queue<InternalEvent> queue) {
-        return () -> client.tournaments().arenaById(arena.id()).ifPresent(updatedArena -> queue.offer(new ArenaUpdate(updatedArena)));
+        return () -> client.tournaments().arenaById(arena.id()).maybe().ifPresent(updatedArena -> queue.offer(new ArenaUpdate(updatedArena)));
     }
 
     static final Collector<ArenaResult, ?, Set<ParticipantStatus>> resultToParticipantStatusCollector =

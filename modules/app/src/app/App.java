@@ -177,7 +177,7 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
 
                 basePanel.add(panel, BorderLayout.CENTER);
 
-                if (! (client.teams().byTeamId(id).orElse(null) instanceof Team team)) return;
+                if (! (client.teams().byTeamId(id) instanceof Some(Team team))) return;
 
                 Thread.ofPlatform().start(() -> {
 
@@ -199,9 +199,9 @@ public record App(AppConfig config, Client client, List<ResolvedPipeline> pipeli
                                         case int index when index > -1 -> {
                                             Tournament selectedTournament = tourComp.field().getItemAt(index);
                                             yield switch (client.tournaments().arenaById(selectedTournament.id())) {
-                                                case Entry(Arena arena) -> startLiveThread(team, arena, callback);
-                                                case NoEntry<Arena> nope -> Thread.ofPlatform().start(() -> {
-                                                    System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), nope));
+                                                case Some(Arena arena) -> startLiveThread(team, arena, callback);
+                                                case Fail<?> fail -> Thread.ofPlatform().start(() -> {
+                                                    System.out.println("Failed to lookup arena with id %s - %s".formatted(selectedTournament.id(), fail));
                                                     callback.run();
                                                 });
                                             };

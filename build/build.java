@@ -29,7 +29,7 @@ void main(String[] args) throws Exception {
 
     if (! Files.exists(chariot))
         Files.copy(URI.create(
-                    "https://repo1.maven.org/maven2/io/github/tors42/chariot/0.2.5/chariot-0.2.5.jar"
+                    "https://repo1.maven.org/maven2/io/github/tors42/chariot/0.2.9/chariot-0.2.9.jar"
                     ).toURL().openStream(), chariot);
 
     List<String> modules = List.of(
@@ -47,7 +47,7 @@ void main(String[] args) throws Exception {
 
         run(javac,
                 "--enable-preview",
-                "--release", "25",
+                "--release", "26",
                 "--module-path", libDir,
                 "--module-source-path", modulesSrc.resolve("*", "src"),
                 "--module", module,
