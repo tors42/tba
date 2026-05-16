@@ -24,12 +24,11 @@ void main(String[] args) throws Exception {
 
     for (Path dir : List.of(libDir, metaInf)) Files.createDirectories(dir);
 
-    Files.createDirectories(libDir);
     Files.copy(Path.of("LICENSE"), metaInf.resolve("LICENSE"));
 
     if (! Files.exists(chariot))
         Files.copy(URI.create(
-                    "https://repo1.maven.org/maven2/io/github/tors42/chariot/0.2.9/chariot-0.2.9.jar"
+                    "https://repo1.maven.org/maven2/io/github/tors42/chariot/0.2.10/chariot-0.2.10.jar"
                     ).toURL().openStream(), chariot);
 
     List<String> modules = List.of(
@@ -71,14 +70,12 @@ void main(String[] args) throws Exception {
            );
     }
 
-
     createRuntime(
             jlink,
             List.of(jmodsPath, jars, libDir),
             outDir.resolve("runtime").resolve(runtime),
             modules,
             "tba=app/app.App");
-
 }
 
 void createRuntime(ToolProvider jlink, List<Path> modulePath, Path output, List<String> modules, String launcher) {
