@@ -48,6 +48,7 @@ public sealed interface EventRenderer {
                 case Join(List<String> members) -> MessageFormat.format(bundle.getString("join"), groupOf(members, () -> bundle.getString("and")), members.size());
                 case TourBegin() -> bundle.getString("begin");
                 case FirstBlood(var member, var foe)   -> MessageFormat.format(bundle.getString("firstblood"), member, foe);
+                case NoShow(var member, var foe)       -> MessageFormat.format(bundle.getString("noshow"), member, foe);
                 case Streak(var member, int winsInRow) -> MessageFormat.format(bundle.getString("streak"), member, winsInRow);
                 case Upset(var member, var foe) -> MessageFormat.format(bundle.getString("upset"), member, foe);
                 case Phoenix(var member, var foe) -> MessageFormat.format(bundle.getString("phoenix"), member, foe);
@@ -75,6 +76,7 @@ public sealed interface EventRenderer {
             case Join(List<String> members) -> new Join(members.stream().map(memberReplacer).toList());
             case TourBegin tb -> tb;
             case FirstBlood(var member, var foe)   -> new FirstBlood(memberReplacer.apply(member), foeReplacer.apply(foe));
+            case NoShow(var member, var foe)       -> new NoShow(memberReplacer.apply(member), foeReplacer.apply(foe));
             case Streak(var member, var winsInRow) -> new Streak(memberReplacer.apply(member), winsInRow);
             case Upset(var member, var foe) -> new Upset(memberReplacer.apply(member), foeReplacer.apply(foe));
             case Phoenix(var member, var foe) -> new Phoenix(memberReplacer.apply(member), foeReplacer.apply(foe));

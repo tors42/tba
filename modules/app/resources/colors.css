@@ -21,7 +21,7 @@ span.foe {
     border-left: 6px solid #04AA6D;
 }
 
-.streak, .avenge, .tourbegin {
+.streak, .avenge, .tourbegin, .noshow {
     background-color: #e7f3fe;
     border-left: 6px solid #2196F3;
 }
@@ -59,3 +59,9 @@ th {
 th, td {
     border-bottom: 1px solid #ddd;
 }
+
+table td:nth-child(2) {
+    text-align: end;
+}
+
+

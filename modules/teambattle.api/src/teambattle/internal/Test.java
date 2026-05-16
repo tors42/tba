@@ -15,6 +15,7 @@ class Test {
                 new Join(List.of("User1")),
                 new Join(List.of("User2", "User3")),
                 new Join(List.of("User4", "User5", "User6")),
+                new NoShow("User1","Foe1"),
                 new FirstBlood("User1","Foe1"),
                 new Streak("User1", 2),
                 new Streak("User1", 3),

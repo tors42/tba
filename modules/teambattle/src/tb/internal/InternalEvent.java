@@ -1,6 +1,7 @@
 package tb.internal;
 
 import module java.base;
+import module chariot;
 
 import chariot.model.Arena;
 import teambattle.api.TeamBattleEvent;
@@ -25,7 +26,8 @@ public sealed interface InternalEvent {
         String userId();
         String opponentId();
     }
-    record Win(String gameId, String userId, String opponentId, int ratingDiff, boolean anyProvisional) implements GameResult {}
+
+    record Win(String gameId, String userId, String opponentId, int ratingDiff, boolean anyProvisional, One<Game> game) implements GameResult {}
     record Draw(String gameId, String userId, String opponentId) implements GameResult {}
     record Loss(String gameId, String userId, String opponentId) implements GameResult {}
 

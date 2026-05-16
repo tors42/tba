@@ -30,6 +30,7 @@ public record ToHttpEvent(EventRenderer renderer) implements Transformer {
                  TourBegin _,
                  TourEnd _,
                  FirstBlood _,
+                 NoShow _,
                  Streak _,
                  Upset _,
                  Phoenix _,

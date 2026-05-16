@@ -1,5 +1,7 @@
 package tb.internal;
 
+import module java.base;
+
 import tb.internal.InternalEvent.GameResult;
 import tb.internal.InternalEvent.Win;
 
@@ -11,7 +13,9 @@ public record FirstBloodAccumulator(boolean done) implements Accumulator<GameRes
 
     @Override
     public Result<GameResult, TeamBattleEvent> accept(GameResult result) {
-        if (! done && result instanceof Win(_, var userId, var opponentId, _, _)) {
+        if (! done
+            && result instanceof Win(_, var userId, var opponentId, _, _, _)
+            && ! NoShowAccumulator.isNoShow(result)) {
             return new Value<>(new TeamBattleEvent.FirstBlood(userId, opponentId));
         }
         return new Self<>(this);

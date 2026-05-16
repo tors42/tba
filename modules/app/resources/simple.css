@@ -39,6 +39,10 @@ th, td {
     border-bottom: 1px solid #ddd;
 }
 
-.avenge, .standings, .tourbegin, .tourend, .streak, .join, .firstblood, .upset, .phoenix  {
+table td:nth-child(2) {
+    text-align: end;
+}
+
+.avenge, .standings, .tourbegin, .tourend, .streak, .join, .firstblood, .upset, .phoenix, .noshow  {
 
 }

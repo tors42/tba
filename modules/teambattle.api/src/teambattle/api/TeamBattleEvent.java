@@ -13,6 +13,7 @@ public sealed interface TeamBattleEvent extends Event, Serializable {
     }
     record TourBegin() implements TeamBattleEvent {}
     record FirstBlood(String member, String foe) implements TeamBattleEvent {}
+    record NoShow(String member, String foe) implements TeamBattleEvent {}
     record Streak(String member, int winsInRow) implements TeamBattleEvent {}
     record Upset(String member, String foe) implements TeamBattleEvent {}
     record Phoenix(String member, String foe) implements TeamBattleEvent {}
