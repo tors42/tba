@@ -7,6 +7,7 @@ import module teambattle.api;
 import module chariot;
 
 import chariot.model.Arena;
+import chariot.model.Clock;
 import chariot.model.Team;
 import chariot.model.User;
 import tb.internal.*;
@@ -175,7 +176,7 @@ public class Tour implements Source {
                                 Thread.ofPlatform().name("large-monitor-%s".formatted(streamId)).start(() -> {
                                     try {
                                         byGameIds
-                                            .map(this::resultOfMember)
+                                            .map(gameMeta -> resultOfMember(gameMeta, currentState.base().arena(), () -> currentMembers().members()))
                                             .filter(Optional::isPresent)
                                             .map(Optional::get)
                                             .forEach(internalEventQueue::offer);
@@ -286,7 +287,7 @@ public class Tour implements Source {
                                             Thread.ofPlatform().name("small-monitor-" + updatedAllParticipants.size()).start(() -> {
                                                 try {
                                                     newStream
-                                                        .map(this::resultOfMember)
+                                                        .map(gameMeta -> resultOfMember(gameMeta, running.base().arena(), () -> currentMembers().members()))
                                                         .filter(Optional::isPresent)
                                                         .map(Optional::get)
                                                         .forEach(internalEventQueue::offer);
@@ -428,7 +429,40 @@ public class Tour implements Source {
         return null;
     }
 
-    Optional<GameResult> resultOfMember(GameMeta gameMeta) {
+    static GameMeta toGameMeta(Game game) {
+        return new GameMeta(
+                game.id(),
+                game.rated(),
+                Variant.fromString(game.variant().toString()),
+                game.clock().maybe()
+                    .map(c -> new RealTime(Clock.ofSeconds(c.initial())
+                        .withIncrementSeconds(c.increment()),
+                        game.speed(),
+                        Enums.Speed.valueOf(game.speed())))
+                    .orElse(null),
+                game.status(),
+                game.createdAt(),
+                new GameMeta.Players(
+                    toGameMetaPlayer(game.players().white()),
+                    toGameMetaPlayer(game.players().black())
+                ),
+                game.winner());
+    }
+
+    static GameMeta.Player toGameMetaPlayer(Player player) {
+        return switch(player) {
+            case Anonymous _ -> new GameMeta.Anonymous();
+            case AI ai -> new GameMeta.AI(ai.level());
+            case Player.Account(var user, int r, boolean p, _, _) -> new GameMeta.Account(user.id(), r, p);
+            case Player.Name(var name) -> new GameMeta.Account(name, -1, true);
+        };
+    }
+
+    Optional<GameResult> resultOfMember(GameMeta gameMeta, Arena arena, Supplier<Set<String>> members) {
+        return resultOfMember(gameMeta, arena, members, Map.of());
+    }
+
+    Optional<GameResult> resultOfMember(GameMeta gameMeta, Arena arena, Supplier<Set<String>> members, Map<String, Game> gameMapping) {
 
         // Typically game results will be from games in the team battle.
         // But players could play games outside of the team battle!
@@ -440,7 +474,6 @@ public class Tour implements Source {
         // - Game time control is same as team battle
         // - Game participants are both in the team battle
 
-        Arena arena = currentState.base().arena();
         var whiteInfo = gameMeta.players().white();
         var blackInfo = gameMeta.players().black();
 
@@ -450,22 +483,26 @@ public class Tour implements Source {
             && gameMeta.timeControl() instanceof RealTime rt
             && rt.clock().equals(arena.tourInfo().clock())
             && gameMeta.variant().equals(arena.tourInfo().variant())
-            && currentMembers().everyone().containsAll(Set.of(whiteInfo.userId(), blackInfo.userId()))) {
+            && (!gameMapping.isEmpty() || currentMembers().everyone().containsAll(Set.of(whiteInfo.userId(), blackInfo.userId())))) {
 
             record IdColor(String id, Enums.Color color, int rating, boolean provisional) {}
             var white = new IdColor(whiteInfo.userId(), Enums.Color.white, whiteInfo.rating(), whiteInfo.provisional());
             var black = new IdColor(blackInfo.userId(), Enums.Color.black, blackInfo.rating(), blackInfo.provisional());
 
-            Set<String> memberSet = currentMembers().members();
+            Set<String> memberSet = members.get();
 
             if (memberSet.contains(white.id()) || memberSet.contains(black.id())) {
                 var member = memberSet.contains(white.id()) ? white : black;
                 var opponent = member.equals(white) ? black : white;
 
                 return Optional.of(switch(gameMeta.winner()) {
-                    case Some(var color) when color == member.color -> new Win(gameMeta.id(), member.id(), opponent.id(),
-                            opponent.rating() - member.rating(), whiteInfo.provisional() || blackInfo.provisional(),
-                            currentState.base().client().games().byGameId(gameMeta.id()));
+                    case Some(var color) when color == member.color -> new Win(
+                            gameMeta.id(), member.id(), opponent.id(),
+                            opponent.rating() - member.rating(),
+                            whiteInfo.provisional() || blackInfo.provisional(),
+                            gameMapping.get(gameMeta.id()) instanceof Game game
+                                ? One.entry(game)
+                                : currentState.base().client().games().byGameId(gameMeta.id()));
                     case Some(_) -> new Loss(gameMeta.id(), member.id(), opponent.id());
                     case Empty() -> new Draw(gameMeta.id(), member.id(), opponent.id());
                 });
@@ -596,16 +633,65 @@ public class Tour implements Source {
                 -> new Ended(new Data(base, new Members.Unset(), List.of()));
 
             // Ongoing tournament
-            case ZonedDateTime _
-                -> new Running(new Data(base, new Members.Unset(),
+            case ZonedDateTime _ -> {
+
+                var gameResultAccumulators = gameResultAccumulators();
+
+                List<Game> resultsSoFar = base.client().tournaments().gamesByArenaId(arena.id(), p -> p
+                        .moves(false)
+                        .pgn(false)
+                        .tags(false)
+                        .opening(false)
+                        .division(false)
+                        .evals(false)
+                        .clocks(false)
+                        .accuracy(false)
+                        )
+                    .stream()
+                    .toList();
+
+                Set<String> members = resultsSoFar.stream()
+                    .flatMap(game -> Set.of(game.players().white(), game.players().black())
+                            .stream()
+                            .<String>mapMulti((var player, var mapper) -> {
+                                if (player instanceof Player.Account(var user,_,_,_,Some(Player.ArenaInfo(_, Some(String teamId))))
+                                        && teamId.equals(base.team().id())) {
+                                    mapper.accept(user.id());
+                                }
+                            })
+                            )
+                    .collect(Collectors.toSet());
+
+                Map<String, Game> gameIdToGameForMembers = resultsSoFar.stream()
+                    .filter(game -> Set.of(game.players().white(), game.players().black())
+                            .stream().anyMatch(player -> player instanceof Player.Account acc
+                                && members.contains(acc.user().id())))
+                    .collect(Collectors.toMap(Game::id, Function.identity()));
+
+                List<GameResult> memberResultsSoFar = gameIdToGameForMembers.values().stream()
+                    .sorted(Comparator.comparing(Game::lastMoveAt))
+                    .map(Tour::toGameMeta)
+                    .map(gameMeta -> resultOfMember(gameMeta, arena, () -> members, gameIdToGameForMembers))
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .toList();
+
+                for (GameResult result : memberResultsSoFar) {
+                    var accumulatorsAndValues = runAccumulators(gameResultAccumulators, result);
+                    gameResultAccumulators = accumulatorsAndValues.accumulators();
+                }
+
+                // initialize members too? todo, "everyone"? arena participants?
+                yield new Running(new Data(base, new Members.Unset(),
                             List.of(
                                 new RepeatableAction(60, arenaUpdate(base.client(), arena, queue)),
                                 new RepeatableAction(60, 60, members(base.client(), arena, base.team(), queue)),
                                 new RepeatableAction(60*20, 60*20, standings(base.client(), arena, queue))
                                 )),
                         new Small(Stream.of(), Set.of()),
-                        List.of(new StreakAccumulator(), new UpsetAccumulator(), new PhoenixAccumulator(), new AvengeAccumulator())
+                        gameResultAccumulators
                         );
+            }
         };
     }
 
@@ -635,11 +721,19 @@ public class Tour implements Source {
                 ).toList();
 
         return new Running(data.withTickAccumulators(updatedTickAccumulators),
-                new Small(Stream.of(), Set.of()),
-                List.of(new FirstBloodAccumulator(), new StreakAccumulator(), new UpsetAccumulator(), new PhoenixAccumulator(), new AvengeAccumulator())
-                );
+                new Small(Stream.of(), Set.of()), gameResultAccumulators());
     }
 
+    static List<Accumulator<InternalEvent.GameResult, TeamBattleEvent>> gameResultAccumulators() {
+        return List.of(
+                new FirstBloodAccumulator(),
+                new NoShowAccumulator(),
+                new StreakAccumulator(),
+                new UpsetAccumulator(),
+                new PhoenixAccumulator(),
+                new AvengeAccumulator()
+                );
+    }
 
     State tickRunning(Running running, Queue<InternalEvent> queue) {
         Data data = running.data();
