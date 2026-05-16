@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download target OS+Arch JDK
         run: curl --output ${{ runner.temp }}/jdk.${{ matrix.pkg }} ${{ env.JDK_BASE_URL }}/openjdk-${{ env.JDK_VERSION }}_${{ matrix.os }}-${{ matrix.arch }}_bin.${{ matrix.pkg }}
@@ -86,7 +86,7 @@ jobs:
       - name: Create zip, preserving executable bits
         run: cd to-package && zip -r tba-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.zip tba-${{ inputs.version }} && cd ..
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wrapped-zip-tba-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
           path: to-package/tba-${{ inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.zip
