@@ -478,11 +478,10 @@ public class Tour implements Source {
         var blackInfo = gameMeta.players().black();
 
         if (gameMeta.status().status() > Enums.Status.started.status()
-
             && gameMeta.rated() == arena.tourInfo().rated()
             && gameMeta.timeControl() instanceof RealTime rt
             && rt.clock().equals(arena.tourInfo().clock())
-            && gameMeta.variant().equals(arena.tourInfo().variant())
+            && gameMeta.variant().key().equals(arena.tourInfo().variant().key())
             && (!gameMapping.isEmpty() || currentMembers().everyone().containsAll(Set.of(whiteInfo.userId(), blackInfo.userId())))) {
 
             record IdColor(String id, Enums.Color color, int rating, boolean provisional) {}
