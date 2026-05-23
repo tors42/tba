@@ -63,6 +63,7 @@ public sealed interface EventRenderer {
                                 .toList()).stream()
                             .map(entry -> "%2d: %s".formatted(entry.index(), entry.value()))
                             .toList()));
+                case Tidbits(var member, var messages) -> "About %s's win, %s!".formatted(member, String.join(" and ", messages)); // todo, localization?
                 case TourEnd() -> bundle.getString("end");
             };
         }
@@ -83,6 +84,7 @@ public sealed interface EventRenderer {
             case Avenge(var member, List<String> avenged, var foe)
                 -> new Avenge(memberReplacer.apply(member), avenged.stream().map(memberReplacer).toList(), foeReplacer.apply(foe));
             case Standings standings -> standings;
+            case Tidbits(var member, var messages) -> new Tidbits(memberReplacer.apply(member), messages);
             case TourEnd te -> te;
        };
     }

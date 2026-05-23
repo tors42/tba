@@ -30,6 +30,7 @@ public sealed interface TeamBattleEvent extends Event, Serializable {
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (k1,_) -> k1, LinkedHashMap::new)));
         }
     }
+    record Tidbits(String member, List<String> messages) implements TeamBattleEvent {}
     record TourEnd() implements TeamBattleEvent {}
 
 }

@@ -340,15 +340,7 @@ public class Tour implements Source {
                         if (! (currentState instanceof Running running)) yield currentState;
 
                         var accumulatorsAndValues = runAccumulators(running.resultAccumulators(), result);
-
-                        if (! accumulatorsAndValues.values().isEmpty()) {
-
-                            //var reducedEmit = accumulatorsAndEmits.emits().stream()
-                            //    .reduce();
-
-                            accumulatorsAndValues.values().forEach(emit -> internalEventQueue.offer(new Message(emit)));
-                        }
-
+                        emitGameResultEvents(accumulatorsAndValues.values(), internalEventQueue);
                         var updatedAccumulators = List.copyOf(accumulatorsAndValues.accumulators());
 
                         // A result just came in...
@@ -627,23 +619,19 @@ public class Tour implements Source {
                                 new RepeatableAction(60, 60, members(base.client(), arena, base.team(), queue))
                                 )));
 
-            // Old tournament
-            case ZonedDateTime now when now.isAfter(arena.tourInfo().startsAt().plus(arena.duration()))
-                -> new Ended(new Data(base, new Members.Unset(), List.of()));
-
             // Ongoing tournament
-            case ZonedDateTime _ -> {
+            case ZonedDateTime now -> {
 
                 var gameResultAccumulators = gameResultAccumulators();
 
                 List<Game> resultsSoFar = base.client().tournaments().gamesByArenaId(arena.id(), p -> p
-                        .moves(false)
+                        .moves()
+                        .clocks()
                         .pgn(false)
                         .tags(false)
                         .opening(false)
                         .division(false)
                         .evals(false)
-                        .clocks(false)
                         .accuracy(false)
                         )
                     .stream()
@@ -677,6 +665,7 @@ public class Tour implements Source {
 
                 for (GameResult result : memberResultsSoFar) {
                     var accumulatorsAndValues = runAccumulators(gameResultAccumulators, result);
+                    emitGameResultEvents(accumulatorsAndValues.values(), queue);
                     gameResultAccumulators = accumulatorsAndValues.accumulators();
                 }
 
@@ -692,6 +681,18 @@ public class Tour implements Source {
                         );
             }
         };
+    }
+
+    void emitGameResultEvents(List<TeamBattleEvent> events, Queue<InternalEvent> queue) {
+        // no tidbits for noshow
+        if (events.stream().anyMatch(TeamBattleEvent.NoShow.class::isInstance))
+            events = events.stream().filter(Predicate.not(TeamBattleEvent.Tidbits.class::isInstance)).toList();
+
+        // no tidbits if only tidbits
+        if (events.stream().allMatch(TeamBattleEvent.Tidbits.class::isInstance))
+            events = List.of();
+
+        events.forEach(emit -> queue.offer(new Message(emit)));
     }
 
     State tickNotStarted(NotStarted notStarted, Queue<InternalEvent> queue) {
@@ -725,12 +726,13 @@ public class Tour implements Source {
 
     static List<Accumulator<InternalEvent.GameResult, TeamBattleEvent>> gameResultAccumulators() {
         return List.of(
+                new TidbitAccumulator(),
                 new FirstBloodAccumulator(),
                 new NoShowAccumulator(),
-                new StreakAccumulator(),
                 new UpsetAccumulator(),
                 new PhoenixAccumulator(),
-                new AvengeAccumulator()
+                new AvengeAccumulator(),
+                new StreakAccumulator()
                 );
     }
 
